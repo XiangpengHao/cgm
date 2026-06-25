@@ -42,8 +42,9 @@ Open it, click **devices…**, enter the SN and tap **Pair** (fetches the key ov
 start the sensor) — or paste a key you already have. Multiple devices are supported (switch with the
 dropdown; all saved in your browser's localStorage, never in the page source). Then **Connect**:
 it handshakes, backfills only the missing history, charts it with zone shading, and
-persists per device across refresh. Unit toggle (mg/dL ↔ mmol/L), light/dark theme, CSV /
-Apple-Health export, and double-click-to-log events (coffee/meal/etc.).
+persists per device across refresh. Unit toggle (mg/dL ↔ mmol/L), light/dark theme, **Export/Import**
+(one JSON backup of all sensors + data + settings, to move between browsers), Apple-Health export,
+and double-click-to-log events (coffee/meal/etc.).
 **Chrome/Edge on desktop or Android only** — Safari/Firefox/iOS don't support Web Bluetooth.
 Libraries (crypto-js, echarts) load from the jsDelivr CDN, pinned with Subresource Integrity hashes.
 

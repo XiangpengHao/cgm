@@ -101,7 +101,9 @@
     <button class="ghost" id="btnUnit">unit: mg/dL</button>
     <button class="ghost" id="btnTheme">theme: light</button>
     <button class="ghost" id="btnLive" title="snap chart to the last 12 h">⟳ 12 h</button>
-    <button class="ghost" id="btnExport">Export CSV</button>
+    <button class="ghost" id="btnImport">Import</button>
+    <button class="ghost" id="btnExport">Export</button>
+    <input type="file" id="importFile" accept="application/json,.json" style="display:none">
     <button class="ghost" id="btnHealth">Apple Health</button>
     <button class="ghost" id="btnClear">Clear data</button>
     <span class="sep"></span>
@@ -549,7 +551,7 @@ async function wizConnect(){ const box=el.devbox, msg=()=>box.querySelector("#wm
 
 // ───────────────────────── UI / chart ───────────────────────────────────────
 const el = id => document.getElementById(id);
-["btnConnect","btnSync","btnDisc","btnUnit","btnTheme","btnLive","btnExport","btnHealth","btnClear","deviceSel","btnDevices",
+["btnConnect","btnSync","btnDisc","btnUnit","btnTheme","btnLive","btnImport","btnExport","importFile","btnHealth","btnClear","deviceSel","btnDevices",
  "dot","status","g","gu","trend","state","updated","quality","age","valid","count","stored","chart","log","ranges","tir","evtmenu",
  "healthwrap","healthclose","healthdl","healthdlinfo",
  "devwrap","devbox"]
@@ -720,15 +722,36 @@ function stateLabel(idx){ return idx>=60?"ACTIVE":"WARMING-UP"; }
 function trendArrow(t){ if(t<-30)return"↓↓"; if(t<-20)return"↓"; if(t<-10)return"↘";
   if(t<11)return"→"; if(t<21)return"↗"; if(t<31)return"↑"; return"↑↑"; }
 
-function exportCsv(){
-  const idxs=Object.keys(data.records).map(Number).sort((a,b)=>a-b);
-  let csv="index,time,glucose_mgdl,glucose_mmol,record_status,valid\n";
-  idxs.forEach(i=>{ const [mgdl,rs]=data.records[i];
-    const t=data.sensorStartIso?recTime(i).toISOString():"";
-    csv+=`${i},${t},${mgdl},${(mgdl/18).toFixed(1)},${rs},${recValid(mgdl,rs,i)?1:0}\n`; });
+// full backup: all sensors + their per-device data + settings, as one JSON (move between browsers)
+function exportAll(){
+  save();                                            // flush the active device's in-memory data
+  const out={ app:"aidex-cgm", version:1, exportedAt:new Date().toISOString(),
+    settings:{unit:settings.unit, theme:settings.theme}, devices, data:{} };
+  devices.list.forEach(d=>{ const raw=loadJSON("cgm.data."+d.id); if(raw) out.data[d.id]=raw; });
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
-  a.download="aidex_glucose.csv"; a.click();
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:"application/json"}));
+  a.download="aidex-backup-"+new Date().toISOString().slice(0,10)+".json"; a.click();
+  log("exported "+devices.list.length+" sensor(s)");
+}
+function importAll(file){
+  const r=new FileReader();
+  r.onload=()=>{ try{
+    const o=JSON.parse(r.result);
+    if(!o || !o.devices || !Array.isArray(o.devices.list)) throw new Error("not an AiDEX backup file");
+    if(!confirm("Import "+o.devices.list.length+" sensor(s) and their data?\n\nExisting sensors are kept; matching ones are overwritten.")) return;
+    if(o.settings){ if(o.settings.unit) settings.unit=o.settings.unit; if(o.settings.theme) settings.theme=o.settings.theme; }
+    o.devices.list.forEach(d=>{ if(!d || !d.id) return;
+      const i=devices.list.findIndex(x=>x.id===d.id);
+      if(i>=0) devices.list[i]=d; else devices.list.push(d);
+      const dd=o.data && o.data[d.id]; if(dd) localStorage.setItem("cgm.data."+d.id, JSON.stringify(dd)); });
+    if(o.devices.activeId && devices.list.some(x=>x.id===o.devices.activeId)) devices.activeId=o.devices.activeId;
+    if(!devices.activeId && devices.list.length) devices.activeId=devices.list[0].id;
+    data=loadData(devices.activeId); windowInit=false;
+    document.documentElement.dataset.theme=settings.theme; el.btnTheme.textContent="theme: "+settings.theme;
+    save(); renderDevices(); render(); if(el.devwrap.classList.contains("open")) renderDevModal();
+    log("imported "+o.devices.list.length+" sensor(s)"); alert("Imported ✓");
+  }catch(e){ log("import failed: "+e.message); alert("Import failed: "+e.message); } };
+  r.readAsText(file);
 }
 function exportHealthJson(){   // valid readings, downsampled to 1/5min, for the Apple Health Shortcut
   const idxs=Object.keys(data.records).map(Number).sort((a,b)=>a-b);
@@ -748,7 +771,9 @@ el.btnSync.onclick=()=>sync();
 el.btnDisc.onclick=disconnect;
 el.btnUnit.onclick=()=>{ settings.unit=MGDL()?"mmol":"mgdl"; save(); render(); };
 el.btnTheme.onclick=()=>setTheme(settings.theme==="light"?"dark":"light");
-el.btnExport.onclick=exportCsv;
+el.btnExport.onclick=exportAll;
+el.btnImport.onclick=()=>el.importFile.click();
+el.importFile.onchange=e=>{ const f=e.target.files[0]; if(f) importAll(f); e.target.value=""; };
 el.btnHealth.onclick=()=>el.healthwrap.classList.add("open");
 el.healthclose.onclick=()=>el.healthwrap.classList.remove("open");
 el.healthwrap.onclick=e=>{ if(e.target===el.healthwrap) el.healthwrap.classList.remove("open"); };
