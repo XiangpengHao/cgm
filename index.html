@@ -87,10 +87,10 @@
 </header>
 <main>
   <div class="toolbar">
-    <label class="k">serial</label><input id="serial" type="text" placeholder="device serial" autocomplete="off">
+    <label class="k">SN</label><input id="serial" type="text" placeholder="device SN" autocomplete="off">
     <label class="k">pair&nbsp;key</label><input id="pairkey" type="text" placeholder="16-byte pair key (hex)" autocomplete="off">
     <button class="ghost" id="btnUnit">unit: mg/dL</button>
-    <button class="ghost" id="btnTheme">theme: dark</button>
+    <button class="ghost" id="btnTheme">theme: light</button>
     <button class="ghost" id="btnLive" title="snap chart to the last 12 h">⟳ 12 h</button>
     <button class="ghost" id="btnExport">Export CSV</button>
     <button class="ghost" id="btnHealth">Apple Health</button>
@@ -338,8 +338,8 @@ function stateName(bc){ const s0=bc.status&1,c0=bc.calTemp&1;
 
 // ───────────────────────── persistence ──────────────────────────────────────
 function loadJSON(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } }
-let settings = loadJSON("cgm.settings") || {serial:"", pairkey:"", unit:"mgdl", theme:"dark"};
-if(!settings.theme) settings.theme="dark";
+let settings = loadJSON("cgm.settings") || {serial:"", pairkey:"", unit:"mgdl", theme:"light"};
+if(!settings.theme) settings.theme="light";
 if(settings.unit!=="mgdl"&&settings.unit!=="mmol") settings.unit="mgdl";
 let data = loadJSON("cgm.data");
 if(!data || typeof data!=="object" || typeof data.records!=="object") data={sensorStartIso:null, records:{}};
