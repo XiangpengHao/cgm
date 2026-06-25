@@ -91,13 +91,24 @@ details, byte maps, and a reproducible worked example: **[PROTOCOL.md](PROTOCOL.
 
 ## Glucose reference ranges (general guidance, not medical advice)
 
+**CGM zones** (color the live value and the chart's target band):
+
 | zone | mg/dL | mmol/L |
 |---|---|---|
-| urgent low | < 54 | < 3.0 |
-| low | 54–69 | 3.0–3.8 |
+| low | < 70 | < 3.9 |
 | in range (target) | 70–180 | 3.9–10.0 |
-| high | 181–250 | 10.1–13.9 |
-| very high | > 250 | > 13.9 |
+| high | > 180 | > 10.0 |
+| urgent | < 54 or > 250 | < 3.0 or > 13.9 |
 
-A brand-new sensor is uncalibrated and least accurate in its first hours — cross-check with a
-fingerstick before trusting a value.
+**Diagnostic thresholds — Mayo Clinic / ADA** (for blood tests under fasting / glucose-tolerance conditions, *not* arbitrary CGM readings):
+
+| test | normal | prediabetes | diabetes |
+|---|---|---|---|
+| Fasting (8 h+) | < 100 (< 5.6) | 100–125 (5.6–6.9) | ≥ 126 (≥ 7.0) |
+| 2 h after 75 g (OGTT) | < 140 (< 7.8) | 140–199 (7.8–11.0) | ≥ 200 (≥ 11.1) |
+| A1C | < 5.7% | 5.7–6.4% | ≥ 6.5% |
+
+mg/dL (mmol/L). Sources: [Mayo Clinic — blood sugar testing](https://www.mayoclinic.org/diseases-conditions/diabetes/in-depth/blood-sugar/art-20046628), [Mayo Clinic — diabetes diagnosis](https://www.mayoclinic.org/diseases-conditions/diabetes/diagnosis-treatment/drc-20371451).
+
+A brand-new sensor is uncalibrated and least accurate in its first hours, and a CGM reads
+interstitial fluid (timing/meal-dependent) — cross-check with a fingerstick before trusting a value.

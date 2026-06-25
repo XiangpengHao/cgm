@@ -48,6 +48,9 @@
          white-space:pre-wrap; max-height:140px; overflow:auto; margin-top:12px;
          border-top:1px solid var(--line); padding-top:10px; }
   .pill{ font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); }
+  table.dx{ border-collapse:collapse; width:100%; font-size:13px; min-width:380px; }
+  table.dx th, table.dx td{ border:1px solid var(--line); padding:5px 9px; text-align:center; }
+  table.dx th{ font-weight:600; }
   .warnbar{ background:var(--warnbg); border:1px solid var(--warnline); color:var(--warnink);
             padding:8px 12px; border-radius:8px; margin-bottom:14px; font-size:13px; }
 </style>
@@ -307,16 +310,28 @@ function recTime(idx){ return new Date(new Date(data.sensorStartIso).getTime()+i
 function zoneColor(mgdl){ if(mgdl<54||mgdl>250) return "var(--bad)";
   if(mgdl<70||mgdl>180) return "var(--warn)"; return "var(--ok)"; }
 function renderRanges(){ const mg=MGDL(), U=mg?"mg/dL":"mmol/L";
-  const rows=[["urgent low",mg?"< 54":"< 3.0","var(--bad)"],
-              ["low",mg?"54–69":"3.0–3.8","var(--warn)"],
-              ["in range (target)",mg?"70–180":"3.9–10.0","var(--ok)"],
-              ["high",mg?"181–250":"10.1–13.9","var(--warn)"],
-              ["very high",mg?"> 250":"> 13.9","var(--bad)"]];
-  el.ranges.innerHTML='<div class="muted" style="margin-bottom:8px">glucose reference ranges'
-    +' <span style="opacity:.7">— general guidance, not medical advice</span></div>'
-    +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    +rows.map(r=>`<span class="pill" style="border-color:${r[2]}"><span style="color:${r[2]}">●</span> ${r[0]}: <b>${r[1]}</b> ${U}</span>`).join("")
-    +'</div>'; }
+  // CGM hypo/hyper zones — these color the live value & the chart's target band
+  const zones=[["low",mg?"< 70":"< 3.9","var(--warn)"],
+               ["in range (target)",mg?"70–180":"3.9–10.0","var(--ok)"],
+               ["high",mg?"> 180":"> 10.0","var(--warn)"],
+               ["urgent",mg?"< 54 or > 250":"< 3.0 or > 13.9","var(--bad)"]];
+  // diagnostic thresholds (Mayo Clinic / ADA), unit-aware
+  const dx = mg
+    ? [["Fasting (8 h+)","&lt; 100","100–125","≥ 126"],
+       ["2 h after meal (OGTT)","&lt; 140","140–199","≥ 200"]]
+    : [["Fasting (8 h+)","&lt; 5.6","5.6–6.9","≥ 7.0"],
+       ["2 h after meal (OGTT)","&lt; 7.8","7.8–11.0","≥ 11.1"]];
+  const zonesHtml=zones.map(z=>`<span class="pill" style="border-color:${z[2]}"><span style="color:${z[2]}">●</span> ${z[0]}: <b>${z[1]}</b></span>`).join("");
+  const head=`<tr><th style="text-align:left">test</th><th style="color:var(--ok)">normal</th><th style="color:var(--warn)">prediabetes</th><th style="color:var(--bad)">diabetes</th></tr>`;
+  const body=dx.map(r=>`<tr><td style="text-align:left">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("");
+  el.ranges.innerHTML =
+     `<div class="muted" style="margin-bottom:6px">CGM zones (${U}) — color the live value &amp; chart band</div>`
+    +`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">${zonesHtml}</div>`
+    +`<div class="muted" style="margin-bottom:6px">diagnostic reference — Mayo Clinic (${U})`
+    +` <span style="opacity:.7">— for blood tests under fasting / glucose-tolerance conditions</span></div>`
+    +`<div style="overflow-x:auto"><table class="dx">${head}${body}</table></div>`
+    +`<div class="muted" style="margin-top:8px;font-size:12px">A1C: normal &lt; 5.7% · prediabetes 5.7–6.4% · diabetes ≥ 6.5%. `
+    +`General guidance, not medical advice — diagnostic thresholds apply to proper blood tests, not arbitrary CGM (interstitial) readings.</div>`; }
 
 let chart=null;
 window.addEventListener("resize",()=>chart&&chart.resize());
