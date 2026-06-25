@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AiDEX X / GX-01S — Web Bluetooth reader</title>
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<!-- vendored locally (self-contained, no CDN / supply-chain): crypto-js (AES block + MD5), echarts (chart) -->
+<script src="vendor/crypto-js.min.js"></script>
+<script src="vendor/echarts.min.js"></script>
+<style>
+  :root, [data-theme="dark"] {
+    --bg:#0f1216; --card:#171c22; --ink:#e6edf3; --mut:#8b97a3; --acc:#4ea1ff; --accink:#04101f;
+    --ok:#37d39a; --warn:#f0a92b; --bad:#ff5d5d; --line:#262d36; --field:#0c1014;
+    --warnbg:#2a1f0c; --warnink:#f0c674; --warnline:#5a4012; }
+  [data-theme="light"] {
+    --bg:#f6f8fa; --card:#ffffff; --ink:#1f2328; --mut:#57606a; --acc:#0969da; --accink:#ffffff;
+    --ok:#1a7f5a; --warn:#9a6700; --bad:#cf222e; --line:#d0d7de; --field:#ffffff;
+    --warnbg:#fff8c5; --warnink:#7d4e00; --warnline:#d4a72c; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 -apple-system,
+         BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 18px;
+           border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:15px; font-weight:600; margin:0; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--mut); display:inline-block; }
+  .dot.on { background:var(--ok); } .dot.busy { background:var(--warn); }
+  button { background:var(--acc); color:var(--accink); border:0; padding:8px 14px; border-radius:8px;
+           font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); }
+  button:disabled { opacity:.45; cursor:default; }
+  main { padding:18px; max-width:1100px; margin:0 auto; }
+  .grid { display:grid; grid-template-columns:300px 1fr; gap:16px; align-items:start; }
+  @media (max-width:760px){ .grid{ grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .big { font-size:54px; font-weight:700; line-height:1; }
+  .unit { font-size:16px; color:var(--mut); font-weight:600; }
+  .row { display:flex; justify-content:space-between; gap:8px; padding:3px 0; color:var(--mut); }
+  .row b { color:var(--ink); font-weight:600; }
+  #chart { height:420px; width:100%; }
+  .muted { color:var(--mut); } .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px; align-items:center; }
+  input[type=text]{ background:var(--field); border:1px solid var(--line); color:var(--ink);
+                    padding:6px 8px; border-radius:6px; font:12px monospace; width:230px; }
+  label.k { color:var(--mut); font-size:12px; }
+  #log { font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--mut);
+         white-space:pre-wrap; max-height:140px; overflow:auto; margin-top:12px;
+         border-top:1px solid var(--line); padding-top:10px; }
+  .pill{ font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); }
+  .warnbar{ background:var(--warnbg); border:1px solid var(--warnline); color:var(--warnink);
+            padding:8px 12px; border-radius:8px; margin-bottom:14px; font-size:13px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>AiDEX X / GX-01S — Web Bluetooth</h1>
+  <span id="status" class="muted">disconnected</span>
+  <span style="flex:1"></span>
+  <button id="btnConnect">Connect</button>
+  <button id="btnSync" class="ghost" disabled>Sync history</button>
+  <button id="btnDisc" class="ghost" disabled>Disconnect</button>
+</header>
+<main>
+  <div class="toolbar">
+    <label class="k">serial</label><input id="serial" type="text" placeholder="device serial" autocomplete="off">
+    <label class="k">pair&nbsp;key</label><input id="pairkey" type="text" placeholder="16-byte pair key (hex)" autocomplete="off">
+    <button class="ghost" id="btnUnit">unit: mg/dL</button>
+    <button class="ghost" id="btnTheme">theme: dark</button>
+    <button class="ghost" id="btnExport">Export CSV</button>
+    <button class="ghost" id="btnClear">Clear data</button>
+    <span class="pill" id="stored">—</span>
+  </div>
+
+  <div class="grid">
+    <div class="card" id="current">
+      <div class="muted">current glucose</div>
+      <div><span class="big" id="g">—</span> <span class="unit" id="gu">mg/dL</span></div>
+      <div style="margin:10px 0 6px"><span id="trend" class="pill">trend —</span>
+        <span id="state" class="pill">—</span></div>
+      <div class="row"><span>updated</span><b id="updated">—</b></div>
+      <div class="row"><span>quality</span><b id="quality">—</b></div>
+      <div class="row"><span>sensor age</span><b id="age">—</b></div>
+      <div class="row"><span>validity</span><b id="valid">—</b></div>
+      <div class="row"><span>readings stored</span><b id="count">0</b></div>
+    </div>
+    <div class="card"><div id="chart"></div></div>
+  </div>
+  <div class="card" id="ranges" style="margin-top:16px"></div>
+  <div id="log"></div>
+</main>
+
+<script>
+"use strict";
+// ───────────────────────── crypto / framing (port of cgm.py) ─────────────────
+const CJS = window.CryptoJS;
+const toHex = b => [...b].map(x=>x.toString(16).padStart(2,"0")).join("");
+const fromHex = h => Uint8Array.from(h.match(/.{1,2}/g).map(x=>parseInt(x,16)));
+function waFromBytes(b){ const w=[]; for(let i=0;i<b.length;i++) w[i>>>2]|=(b[i]&0xff)<<(24-8*(i%4));
+  return CJS.lib.WordArray.create(w, b.length); }
+function bytesFromWa(wa){ const o=new Uint8Array(wa.sigBytes);
+  for(let i=0;i<wa.sigBytes;i++) o[i]=(wa.words[i>>>2]>>>(24-8*(i%4)))&0xff; return o; }
+function aesEncBlock(key16, blk16){
+  const e=CJS.AES.encrypt(waFromBytes(blk16), waFromBytes(key16),
+      {mode:CJS.mode.ECB, padding:CJS.pad.NoPadding});
+  return bytesFromWa(e.ciphertext); }
+function md5(bytes){ return bytesFromWa(CJS.MD5(waFromBytes(bytes))); }
+
+// AES-128-CFB128 (manual, so partial final block — e.g. 17-byte challenge — is byte-exact)
+function cfb(key, iv, data, decrypt){
+  const out=new Uint8Array(data.length); let fb=iv.slice(0,16);
+  for(let off=0; off<data.length; off+=16){
+    const ks=aesEncBlock(key, fb), n=Math.min(16, data.length-off), cb=new Uint8Array(16);
+    for(let i=0;i<n;i++) out[off+i]=data[off+i]^ks[i];
+    for(let i=0;i<16;i++) cb[i]=(off+i<data.length)?(decrypt?data[off+i]:out[off+i]):0;
+    fb=cb;
+  }
+  return out;
+}
+function crc16ccitt(b){ let c=0xffff; for(const x of b){ c^=x<<8;
+  for(let i=0;i<8;i++) c=(c&0x8000)?((c<<1)^0x1021)&0xffff:(c<<1)&0xffff; } return c; }
+function crc8maxim(b){ let c=0; for(const x of b){ c^=x;
+  for(let i=0;i<8;i++) c=(c&1)?(c>>1)^0x8c:c>>1; } return c&0xff; }
+function b36(ch){ const o=ch.charCodeAt(0);
+  if(o>=48&&o<=57)return o-48; if(o>=65&&o<=90)return o-55; if(o>=97&&o<=122)return o-87;
+  throw new Error("bad serial char "+ch); }
+const deriveIV = serial => md5(Uint8Array.from([...serial].map(c=>(b36(c)*17+19)&0xff)));
+
+function sessionKey(challenge, pairKey, iv){
+  if(challenge.length!==17) throw new Error("challenge !=17 bytes");
+  const p=cfb(pairKey, iv, challenge, true), sk=p.slice(0,16);
+  if(crc8maxim(sk)!==p[16]) throw new Error("session-key CRC8 mismatch (serial/key?)");
+  return sk;
+}
+function devEncode(op, payload, key, iv){
+  const f=new Uint8Array(1+payload.length+2); f[0]=op; f.set(payload,1);
+  const c=crc16ccitt(f.subarray(0,1+payload.length)); f[f.length-2]=c&0xff; f[f.length-1]=c>>8;
+  return cfb(key, iv, f, false);
+}
+function devDecode(data, key, iv){
+  if(data.length<3) return null;
+  const p=cfb(key, iv, data, true);
+  const got=p[p.length-2]|(p[p.length-1]<<8);
+  if(got!==crc16ccitt(p.subarray(0,p.length-2))) return null;
+  return { op:p[0], payload:p.slice(1,p.length-2) };
+}
+const u16 = (b,o)=>b[o]|(b[o+1]<<8);
+const i8  = b=> b>127? b-256 : b;
+const u16le = n => Uint8Array.from([n&0xff,(n>>8)&0xff]);
+
+function decodeBroadcast(body){            // 16-byte broadcast body
+  if(body.length<10 || (body.length-7)%3!==0) return null;
+  const t=u16(body,0), out={timeOffset:t,status:body[2],calTemp:body[3],
+    trend:i8(body[4]),readings:[]};
+  for(let i=0;i<(body.length-7)/3;i++){ const off=5+i*3, w=u16(body,off);
+    if(w===0xffff) continue;
+    out.readings.push({mgdl:w&0x3ff, recStatus:(w>>10)&3, quality:body[off+2], idx:t-i}); }
+  return out;
+}
+const decodeStartTime = p => (p.length<9||p[0]!==1)? null :
+  new Date(u16(p,1), p[3]-1, p[4], p[5], p[6], p[7]);
+const decodeRange = p => (p.length<5||p[0]!==1)? null : [u16(p,1), u16(p,p.length-2)];
+function decodeHistBlock(p){ if(p.length<3||p[0]!==1) return null;
+  const start=u16(p,1), words=[]; for(let i=0;i<(p.length-3)>>1;i++) words.push(u16(p,3+2*i));
+  return {start, words}; }
+
+// ───────────────────────── BLE transport ────────────────────────────────────
+const S_181F=0x181f, C_F002=0xf002, C_F003=0xf003;
+let device=null, f002=null, sk=null, iv=null, pending=null;
+
+function onNotify(ev){
+  const data=new Uint8Array(ev.target.value.buffer);
+  if(!sk){ return; }
+  const msg=devDecode(data, sk, iv);
+  if(msg && pending){ const r=pending; pending=null; r(msg); }
+}
+const ALLOWED_OPS=[0x10,0x11,0x21,0x22,0x23];  // read-only by design — never a state-changing opcode (no 0x20)
+async function command(op, payload=new Uint8Array(0), timeout=5000){
+  if(!ALLOWED_OPS.includes(op)) throw new Error("disallowed opcode 0x"+op.toString(16));
+  const packet=devEncode(op, payload, sk, iv);
+  const got=new Promise((res)=>{ pending=res; });
+  if(f002.writeValueWithoutResponse) await f002.writeValueWithoutResponse(packet);
+  else await f002.writeValue(packet);
+  return Promise.race([got, new Promise(r=>setTimeout(()=>r(null),timeout))]).then(m=>{
+    pending=null; return (m && m.op===op) ? m : null;   // ignore unmatched / stray frames
+  });
+}
+async function connect(){
+  if(!navigator.bluetooth){ log("Web Bluetooth unavailable — use Chrome/Edge over https or localhost."); return; }
+  if(!window.CryptoJS || !window.echarts){ log("libraries failed to load (vendor/*.js missing?)"); return; }
+  if(!settings.serial || !settings.pairkey){ log("Enter your device serial and pair key in the fields above, then Connect."); return; }
+  if(!/^[0-9a-fA-F]{32}$/.test(settings.pairkey)){ log("pair key must be 32 hex characters."); return; }
+  setStatus("requesting device…","busy");
+  device=await navigator.bluetooth.requestDevice({filters:[{services:[S_181F]}], optionalServices:[S_181F]});
+  device.addEventListener("gattserverdisconnected", onDisconnect);
+  setStatus("connecting…","busy");
+  const server=await device.gatt.connect();
+  const svc=await server.getPrimaryService(S_181F);
+  f002=await svc.getCharacteristic(C_F002);
+  const f003=await svc.getCharacteristic(C_F003);
+  await f003.startNotifications().catch(()=>{});
+  await f002.startNotifications();
+  f002.addEventListener("characteristicvaluechanged", onNotify);
+  // handshake: read 17-byte challenge -> session key
+  iv=deriveIV(settings.serial);
+  const pairKey=fromHex(settings.pairkey);
+  const chal=new Uint8Array((await f002.readValue()).buffer);
+  sk=sessionKey(chal, pairKey, iv);
+  log("handshake ok — session established");
+  setStatus("connected: "+(device.name||device.id),"on");
+  el.btnSync.disabled=false; el.btnDisc.disabled=false; el.btnConnect.disabled=true;
+  await sync();   // sync() starts the live poll in its finally when connected
+}
+function onDisconnect(){ sk=null; f002=null; stopLivePoll();
+  setStatus("disconnected","off"); el.btnSync.disabled=true; el.btnDisc.disabled=true;
+  el.btnConnect.disabled=false; log("disconnected"); }
+function disconnect(){ if(device&&device.gatt.connected) device.gatt.disconnect(); }
+
+// ───────────────────────── sync / backfill ──────────────────────────────────
+async function sync(){
+  if(!sk){ return; }
+  stopLivePoll();   // don't let the poll timer clobber the shared command channel mid-sync
+  setStatus("syncing…","busy"); el.btnSync.disabled=true;
+  try {
+    const st=await command(0x21), start=st&&decodeStartTime(st.payload);
+    const rng=await command(0x22), range=rng&&decodeRange(rng.payload);
+    if(!start||!range){ log("sync: could not read start time / range"); return; }
+    const startIso=start.toISOString();
+    if(data.sensorStartIso!==startIso){          // new sensor session -> fresh dataset
+      log("new sensor session detected; resetting stored data");
+      data={sensorStartIso:startIso, records:{}};
+    }
+    const [minIdx,maxIdx]=range;
+    let missing=[]; for(let i=minIdx;i<=maxIdx;i++) if(!(i in data.records)) missing.push(i);
+    log(`stored range ${minIdx}..${maxIdx}; ${missing.length} missing — backfilling`);
+    let guard=0;
+    while(missing.length && guard++<200){
+      const startI=missing[0];
+      const resp=await command(0x23, u16le(startI));
+      const blk=resp&&decodeHistBlock(resp.payload);
+      if(!blk||!blk.words.length) break;
+      blk.words.forEach((w,i)=>{ const idx=blk.start+i;
+        if(idx>=minIdx&&idx<=maxIdx) data.records[idx]=[w&0x3ff,(w>>10)&3]; });
+      const next=blk.start+blk.words.length;
+      missing=missing.filter(i=>i>=next);   // everything below `next` is now filled or doesn't exist
+      if(next<=startI) break;
+    }
+    save();
+    // also grab a fresh broadcast for trend + newest value
+    await poll();
+    render();
+    log(`sync complete — ${Object.keys(data.records).length} readings stored`);
+  } catch(e){ log("sync error: "+e.message); }
+  finally { el.btnSync.disabled = !sk;
+    if(sk){ setStatus("connected: "+(device.name||""),"on"); startLivePoll(); } }
+}
+
+let liveTimer=null;
+function startLivePoll(){ stopLivePoll(); liveTimer=setInterval(()=>poll().then(render), 60000); }
+function stopLivePoll(){ if(liveTimer) clearInterval(liveTimer); liveTimer=null; }
+async function poll(){
+  if(!sk) return;
+  try {
+    const br=await command(0x11);
+    if(br && br.payload[0]===1){
+      const bc=decodeBroadcast(br.payload.slice(1));
+      if(bc){ live={trend:bc.trend, state:stateName(bc), timeOffset:bc.timeOffset,
+                     quality:(bc.readings[0]||{}).quality, status:bc.status};
+        bc.readings.forEach(r=>{ if(r.idx>0) data.records[r.idx]=[r.mgdl,r.recStatus]; });
+        save();
+      }
+    }
+  } catch(e){ if(device&&device.gatt&&!device.gatt.connected) onDisconnect(); }
+}
+function stateName(bc){ const s0=bc.status&1,c0=bc.calTemp&1;
+  if(s0&&c0)return"NEW/USED"; if(s0&&!c0)return"EXPIRED";
+  if(bc.timeOffset<60)return"WARMING-UP"; return"ACTIVE"; }
+
+// ───────────────────────── persistence ──────────────────────────────────────
+function loadJSON(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } }
+let settings = loadJSON("cgm.settings") || {serial:"", pairkey:"", unit:"mgdl", theme:"dark"};
+if(!settings.theme) settings.theme="dark";
+if(settings.unit!=="mgdl"&&settings.unit!=="mmol") settings.unit="mgdl";
+let data = loadJSON("cgm.data");
+if(!data || typeof data!=="object" || typeof data.records!=="object") data={sensorStartIso:null, records:{}};
+let live = {trend:null,state:null,timeOffset:null,quality:null,status:null};
+function save(){ try { localStorage.setItem("cgm.data", JSON.stringify(data));
+    localStorage.setItem("cgm.settings", JSON.stringify(settings)); }
+  catch(e){ log("localStorage save failed: "+e.message); } }
+
+// ───────────────────────── UI / chart ───────────────────────────────────────
+const el = id => document.getElementById(id);
+["btnConnect","btnSync","btnDisc","btnUnit","btnTheme","btnExport","btnClear","serial","pairkey",
+ "dot","status","g","gu","trend","state","updated","quality","age","valid","count","stored","chart","log","ranges"]
+ .forEach(id=>el[id]=document.getElementById(id));
+function setStatus(t,cls){ el.status.textContent=t; el.dot.className="dot "+(cls||""); }
+function log(m){ el.log.textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + el.log.textContent; }
+
+const MGDL = ()=>settings.unit==="mgdl";
+const conv = v => MGDL()? v : v/18;
+const fmt  = v => MGDL()? Math.round(v) : (v/18).toFixed(1);
+function recValid(mgdl, rs, idx){ return rs===0 && mgdl>0 && mgdl<0x3ff && idx>=60; }
+function currentValid(mgdl, rs, idx){ return recValid(mgdl,rs,idx) && (live.status==null || (live.status&0x3F)===0); }
+function recTime(idx){ return new Date(new Date(data.sensorStartIso).getTime()+idx*60000); }
+// glucose zone for coloring the current value (mg/dL thresholds)
+function zoneColor(mgdl){ if(mgdl<54||mgdl>250) return "var(--bad)";
+  if(mgdl<70||mgdl>180) return "var(--warn)"; return "var(--ok)"; }
+function renderRanges(){ const mg=MGDL(), U=mg?"mg/dL":"mmol/L";
+  const rows=[["urgent low",mg?"< 54":"< 3.0","var(--bad)"],
+              ["low",mg?"54–69":"3.0–3.8","var(--warn)"],
+              ["in range (target)",mg?"70–180":"3.9–10.0","var(--ok)"],
+              ["high",mg?"181–250":"10.1–13.9","var(--warn)"],
+              ["very high",mg?"> 250":"> 13.9","var(--bad)"]];
+  el.ranges.innerHTML='<div class="muted" style="margin-bottom:8px">glucose reference ranges'
+    +' <span style="opacity:.7">— general guidance, not medical advice</span></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    +rows.map(r=>`<span class="pill" style="border-color:${r[2]}"><span style="color:${r[2]}">●</span> ${r[0]}: <b>${r[1]}</b> ${U}</span>`).join("")
+    +'</div>'; }
+
+let chart=null;
+window.addEventListener("resize",()=>chart&&chart.resize());
+function ensureChart(){ if(!chart) chart=echarts.init(el.chart, settings.theme==="light"?null:"dark",
+                                                       {renderer:"canvas"}); }
+function setTheme(t){ settings.theme=t; save(); document.documentElement.dataset.theme=t;
+  el.btnTheme.textContent="theme: "+t;
+  if(chart){ chart.dispose(); chart=null; } ensureChart(); render(); }
+function render(){
+  ensureChart();
+  renderRanges();
+  const idxs=Object.keys(data.records).map(Number).sort((a,b)=>a-b);
+  const valid=[], warm=[];
+  idxs.forEach(i=>{ const [mgdl,rs]=data.records[i]; const t=data.sensorStartIso?recTime(i).getTime():i;
+    const pt=[t, +conv(mgdl).toFixed(2)];
+    (recValid(mgdl,rs,i)?valid:warm).push(pt); });
+  const band = MGDL()? [70,180] : [3.9,10.0];
+  chart.setOption({
+    backgroundColor:"transparent",
+    grid:{left:48,right:16,top:24,bottom:48},
+    tooltip:{trigger:"axis",valueFormatter:v=>v+(MGDL()?" mg/dL":" mmol/L")},
+    xAxis:{type:"time"},
+    yAxis:{type:"value",name:MGDL()?"mg/dL":"mmol/L",
+           min:v=>Math.min(band[0]-1,v.min), max:v=>Math.max(band[1]+1,v.max)},
+    dataZoom:[{type:"inside"},{type:"slider",height:16,bottom:18}],
+    series:[
+      {name:"glucose",type:"line",showSymbol:false,smooth:true,data:valid,
+       lineStyle:{width:2,color:"#4ea1ff"},
+       markArea:{silent:true,itemStyle:{color:"rgba(55,211,154,.10)"},
+                 data:[[{yAxis:band[0]},{yAxis:band[1]}]]}},
+      {name:"warmup/invalid",type:"scatter",symbolSize:4,data:warm,
+       itemStyle:{color:"rgba(240,169,43,.5)"}},
+    ],
+  }, true);
+  // current = highest index
+  const last = idxs.length? idxs[idxs.length-1] : null;
+  if(last!=null){
+    const [mgdl,rs]=data.records[last];
+    el.g.textContent=fmt(mgdl); el.gu.textContent=MGDL()?"mg/dL":"mmol/L";
+    el.updated.textContent = data.sensorStartIso? recTime(last).toLocaleTimeString() : "—";
+    el.quality.textContent = live.quality!=null? live.quality : "—";
+    el.age.textContent = (live.timeOffset!=null?live.timeOffset:last)+" min";
+    const v=currentValid(mgdl,rs,last);
+    el.g.style.color = v? zoneColor(mgdl) : "var(--mut)";
+    el.valid.innerHTML = v? '<span class="ok">valid</span>'
+                          : '<span class="warn">'+(mgdl>=0x3ff?"saturated/warmup":"warming/invalid")+'</span>';
+    el.state.textContent = live.state||stateLabel(last);
+    if(live.trend!=null){ const a=trendArrow(live.trend);
+      el.trend.textContent=`trend ${live.trend>=0?"+":""}${live.trend} mg/dL/min ${a}`; }
+  }
+  el.count.textContent=idxs.length;
+  el.stored.textContent = data.sensorStartIso
+    ? `session ${new Date(data.sensorStartIso).toLocaleString()} · ${idxs.length} pts` : "no data";
+  el.btnUnit.textContent="unit: "+(MGDL()?"mg/dL":"mmol/L");
+}
+function stateLabel(idx){ return idx>=60?"ACTIVE":"WARMING-UP"; }
+function trendArrow(t){ if(t<-30)return"↓↓"; if(t<-20)return"↓"; if(t<-10)return"↘";
+  if(t<11)return"→"; if(t<21)return"↗"; if(t<31)return"↑"; return"↑↑"; }
+
+function exportCsv(){
+  const idxs=Object.keys(data.records).map(Number).sort((a,b)=>a-b);
+  let csv="index,time,glucose_mgdl,glucose_mmol,record_status,valid\n";
+  idxs.forEach(i=>{ const [mgdl,rs]=data.records[i];
+    const t=data.sensorStartIso?recTime(i).toISOString():"";
+    csv+=`${i},${t},${mgdl},${(mgdl/18).toFixed(1)},${rs},${recValid(mgdl,rs,i)?1:0}\n`; });
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download="aidex_glucose.csv"; a.click();
+}
+
+// ───────────────────────── wire up ──────────────────────────────────────────
+el.btnConnect.onclick=()=>connect().catch(e=>{ log("connect error: "+e.message); setStatus("error","off");
+  el.btnConnect.disabled=false; });
+el.btnSync.onclick=()=>sync();
+el.btnDisc.onclick=disconnect;
+el.btnUnit.onclick=()=>{ settings.unit=MGDL()?"mmol":"mgdl"; save(); render(); };
+el.btnTheme.onclick=()=>setTheme(settings.theme==="light"?"dark":"light");
+el.btnExport.onclick=exportCsv;
+el.btnClear.onclick=()=>{ if(confirm("Clear all stored readings?")){ data={sensorStartIso:null,records:{}};
+  save(); render(); log("data cleared"); } };
+el.serial.value=settings.serial; el.pairkey.value=settings.pairkey;
+el.serial.onchange=()=>{ settings.serial=el.serial.value.trim(); save(); };
+el.pairkey.onchange=()=>{ settings.pairkey=el.pairkey.value.trim().replace(/\s/g,""); save(); };
+
+document.documentElement.dataset.theme = settings.theme;   // apply saved theme (survives refresh)
+el.btnTheme.textContent = "theme: " + settings.theme;
+if(!navigator.bluetooth) log("⚠ Web Bluetooth not available. Use Chrome/Edge on desktop/Android over https or localhost.");
+render();   // restore from localStorage on load (survives refresh)
+log("ready — click Connect");
+</script>
+</body>
+</html>

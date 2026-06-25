@@ -1,0 +1,37 @@
+name: Deploy web tool to GitHub Pages
+
+# Publishes index.html (the Web Bluetooth reader) to GitHub Pages.
+# One-time setup: repo Settings -> Pages -> Build and deployment -> Source = "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble static site (web app + vendored libs only)
+        run: |
+          mkdir -p _site
+          cp index.html _site/index.html
+          cp -r vendor _site/vendor
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

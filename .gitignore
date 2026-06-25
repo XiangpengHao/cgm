@@ -1,0 +1,20 @@
+# Reverse-engineering inputs (proprietary app / large binaries — do not publish)
+tmp/
+
+# Build artifacts & tooling
+.build/
+.tools/
+__pycache__/
+*.pyc
+# compiled CGMProbe binary (build it from CGMProbe.swift)
+CGMProbe
+
+# Scratch, logs, local notes
+scratch_*.py
+scratch_*.mjs
+scratchpad_*.py
+scratchpad_*.log
+*.log
+MEMORY.md
+
+.DS_Store
