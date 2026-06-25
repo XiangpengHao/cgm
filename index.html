@@ -38,7 +38,8 @@
   button:disabled { opacity:.45; cursor:default; }
   input[type=text]{ height:32px; width:200px; padding:0 10px; font:12px ui-monospace,Menlo,monospace;
                     background:var(--field); border:1px solid var(--line); border-radius:8px; color:var(--ink); }
-  #serial{ width:120px; } #pairkey{ width:250px; }
+  select{ height:32px; padding:0 8px; font-size:13px; border:1px solid var(--line); border-radius:8px;
+          background:var(--field); color:var(--ink); max-width:200px; }
   label.k { color:var(--mut); font-size:12px; }
   .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
   .toolbar .sep { flex:1; }
@@ -73,6 +74,13 @@
   #healthbox ol{ margin:12px 0; padding-left:20px; font-size:13px; } #healthbox li{ margin:7px 0; }
   #healthbox ul{ margin:6px 0; padding-left:18px; } #healthbox ul li{ margin:3px 0; }
   #healthbox code{ background:var(--field); border:1px solid var(--line); padding:1px 5px; border-radius:4px; font:11px ui-monospace,Menlo,monospace; }
+  #devwrap{ position:fixed; inset:0; z-index:60; display:none; background:rgba(0,0,0,.55); overflow:auto; padding:40px 16px; }
+  #devwrap.open{ display:block; }
+  #devbox{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; max-width:460px; margin:0 auto; }
+  #devbox h2{ font-size:15px; margin:0; }
+  #devbox input[type=text]{ width:100%; }
+  #devbox code{ background:var(--field); border:1px solid var(--line); padding:1px 5px; border-radius:4px; font:11px ui-monospace,Menlo,monospace; }
+  .devrow{ display:flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
 </style>
 </head>
 <body>
@@ -87,8 +95,8 @@
 </header>
 <main>
   <div class="toolbar">
-    <label class="k">SN</label><input id="serial" type="text" placeholder="device SN" autocomplete="off">
-    <label class="k">pair&nbsp;key</label><input id="pairkey" type="text" placeholder="16-byte pair key (hex)" autocomplete="off">
+    <label class="k">device</label><select id="deviceSel"></select>
+    <button class="ghost" id="btnDevices">devices…</button>
     <button class="ghost" id="btnUnit">unit: mg/dL</button>
     <button class="ghost" id="btnTheme">theme: light</button>
     <button class="ghost" id="btnLive" title="snap chart to the last 12 h">⟳ 12 h</button>
@@ -148,6 +156,22 @@
   </ol>
   <p class="muted" style="font-size:12px;margin:0">Uncalibrated CGM values — not for clinical use.
     Tip: after building it once, use the shortcut's share button to get an iCloud link you can reuse anywhere.</p>
+</div></div>
+<div id="devwrap"><div id="devbox">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <h2>Devices</h2><button class="ghost" id="devclose">close</button></div>
+  <div id="devlist" style="margin:12px 0;display:flex;flex-direction:column;gap:8px"></div>
+  <div style="border-top:1px solid var(--line);padding-top:12px">
+    <div class="muted" style="font-size:12px;margin-bottom:8px">add / edit a device</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <input id="devname" type="text" placeholder="name (e.g. left arm)" autocomplete="off">
+      <input id="devsn" type="text" placeholder="device SN" autocomplete="off">
+      <input id="devkey" type="text" placeholder="16-byte pair key (hex)" autocomplete="off">
+      <button id="devsave">add device</button>
+    </div>
+    <p class="muted" style="font-size:11px;margin:8px 0 0">No pair key yet? Get it with
+      <code>cgm.py pair --serial &lt;SN&gt;</code>. Everything is stored only in this browser.</p>
+  </div>
 </div></div>
 
 <script>
@@ -248,8 +272,9 @@ async function command(op, payload=new Uint8Array(0), timeout=5000){
 async function connect(){
   if(!navigator.bluetooth){ log("Web Bluetooth unavailable — use Chrome/Edge over https or localhost."); return; }
   if(!window.CryptoJS || !window.echarts){ log("libraries failed to load (vendor/*.js missing?)"); return; }
-  if(!settings.serial || !settings.pairkey){ log("Enter your device serial and pair key in the fields above, then Connect."); return; }
-  if(!/^[0-9a-fA-F]{32}$/.test(settings.pairkey)){ log("pair key must be 32 hex characters."); return; }
+  const dev0=activeDevice();
+  if(!dev0 || !dev0.serial || !dev0.pairkey){ log("No device selected — open ‘devices…’ and add a SN + pair key."); return; }
+  if(!/^[0-9a-fA-F]{32}$/.test(dev0.pairkey)){ log("pair key must be 32 hex characters."); return; }
   setStatus("requesting device…","busy");
   device=await navigator.bluetooth.requestDevice({filters:[{services:[S_181F]}], optionalServices:[S_181F]});
   device.addEventListener("gattserverdisconnected", onDisconnect);
@@ -262,8 +287,8 @@ async function connect(){
   await f002.startNotifications();
   f002.addEventListener("characteristicvaluechanged", onNotify);
   // handshake: read 17-byte challenge -> session key
-  iv=deriveIV(settings.serial);
-  const pairKey=fromHex(settings.pairkey);
+  iv=deriveIV(dev0.serial);
+  const pairKey=fromHex(dev0.pairkey);
   const chal=new Uint8Array((await f002.readValue()).buffer);
   sk=sessionKey(chal, pairKey, iv);
   log("handshake ok — session established");
@@ -338,22 +363,87 @@ function stateName(bc){ const s0=bc.status&1,c0=bc.calTemp&1;
 
 // ───────────────────────── persistence ──────────────────────────────────────
 function loadJSON(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } }
-let settings = loadJSON("cgm.settings") || {serial:"", pairkey:"", unit:"mgdl", theme:"light"};
-if(!settings.theme) settings.theme="light";
-if(settings.unit!=="mgdl"&&settings.unit!=="mmol") settings.unit="mgdl";
-let data = loadJSON("cgm.data");
-if(!data || typeof data!=="object" || typeof data.records!=="object") data={sensorStartIso:null, records:{}};
-if(!Array.isArray(data.events)) data.events=[];   // {t:ms, label} meal/activity markers
+function newId(){ return crypto.randomUUID ? crypto.randomUUID() : "d"+Date.now()+Math.random().toString(16).slice(2); }
+let settings = loadJSON("cgm.settings") || {};
+settings.unit = (settings.unit==="mgdl"||settings.unit==="mmol") ? settings.unit : "mgdl";
+settings.theme = settings.theme || "light";
+
+// device registry: { activeId, list:[{id,name,serial,pairkey}] }; data is per-device (cgm.data.<id>)
+let devices = loadJSON("cgm.devices");
+if(!devices || !Array.isArray(devices.list)){
+  devices = {activeId:null, list:[]};
+  const legacy = loadJSON("cgm.settings");            // migrate the previous single-device setup
+  if(legacy && (legacy.serial || legacy.pairkey)){
+    const id=newId();
+    devices.list.push({id, name:legacy.serial||"Device 1", serial:legacy.serial||"", pairkey:legacy.pairkey||""});
+    devices.activeId=id;
+    const ld=loadJSON("cgm.data"); if(ld) localStorage.setItem("cgm.data."+id, JSON.stringify(ld));
+  }
+  localStorage.setItem("cgm.devices", JSON.stringify(devices));
+}
+function activeDevice(){ return devices.list.find(d=>d.id===devices.activeId) || null; }
+function loadData(id){ let d = id ? loadJSON("cgm.data."+id) : null;
+  if(!d || typeof d!=="object" || typeof d.records!=="object") d={sensorStartIso:null, records:{}, events:[]};
+  if(!Array.isArray(d.events)) d.events=[];
+  return d; }
+let data = loadData(devices.activeId);
 let live = {trend:null,state:null,timeOffset:null,quality:null,status:null};
-function save(){ try { localStorage.setItem("cgm.data", JSON.stringify(data));
-    localStorage.setItem("cgm.settings", JSON.stringify(settings)); }
-  catch(e){ log("localStorage save failed: "+e.message); } }
+function save(){ try {
+  if(devices.activeId) localStorage.setItem("cgm.data."+devices.activeId, JSON.stringify(data));
+  localStorage.setItem("cgm.devices", JSON.stringify(devices));
+  localStorage.setItem("cgm.settings", JSON.stringify({unit:settings.unit, theme:settings.theme}));
+} catch(e){ log("localStorage save failed: "+e.message); } }
+
+// ── device management ───────────────────────────────────────────────────────
+function setActiveDevice(id){ devices.activeId=id||null; data=loadData(devices.activeId);
+  windowInit=false; save(); renderDevices(); render(); }
+const esc = s => String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function renderDevices(){
+  const sel=el.deviceSel;
+  if(sel){ sel.innerHTML="";
+    if(!devices.list.length){ const o=document.createElement("option"); o.value=""; o.textContent="(no device)"; sel.appendChild(o); }
+    devices.list.forEach(d=>{ const o=document.createElement("option"); o.value=d.id;
+      o.textContent=d.name||d.serial||"device"; if(d.id===devices.activeId) o.selected=true; sel.appendChild(o); }); }
+  if(el.devwrap && el.devwrap.classList.contains("open")) renderDevList();
+}
+function renderDevList(){
+  el.devlist.innerHTML = devices.list.length ? "" : '<div class="muted" style="font-size:13px">no devices yet — add one below.</div>';
+  devices.list.forEach(d=>{
+    const row=document.createElement("div"); row.className="devrow"; const act=d.id===devices.activeId;
+    const info=document.createElement("div"); info.style.cssText="flex:1;min-width:0";
+    info.innerHTML=`<b>${esc(d.name||d.serial||"device")}</b><span class="muted" style="font-size:11px"> · SN ${esc(d.serial||"—")}${d.pairkey?"":" · no key"}</span>`;
+    const use=document.createElement("button"); use.className="ghost"; use.textContent=act?"active":"use"; use.disabled=act; use.onclick=()=>setActiveDevice(d.id);
+    const ed=document.createElement("button"); ed.className="ghost"; ed.textContent="edit"; ed.onclick=()=>fillDevForm(d);
+    const del=document.createElement("button"); del.className="ghost"; del.textContent="✕"; del.title="remove"; del.onclick=()=>deleteDevice(d.id);
+    row.append(info,use,ed,del); el.devlist.appendChild(row);
+  });
+}
+let devEditId=null;
+function fillDevForm(d){ devEditId=d?d.id:null;
+  el.devname.value=d?(d.name||""):""; el.devsn.value=d?(d.serial||""):""; el.devkey.value=d?(d.pairkey||""):"";
+  el.devsave.textContent=d?"save changes":"add device"; if(d) el.devname.focus(); }
+function saveDeviceForm(){
+  const name=el.devname.value.trim(), serial=el.devsn.value.trim(), pairkey=el.devkey.value.trim().replace(/\s/g,"");
+  if(!serial){ alert("enter the device SN"); return; }
+  if(pairkey && !/^[0-9a-fA-F]{32}$/.test(pairkey)){ alert("pair key must be 32 hex characters"); return; }
+  if(devEditId){ const d=devices.list.find(x=>x.id===devEditId); if(d){ d.name=name||serial; d.serial=serial; d.pairkey=pairkey; } }
+  else { const id=newId(); devices.list.push({id, name:name||serial, serial, pairkey}); if(!devices.activeId){ devices.activeId=id; data=loadData(id); } }
+  devEditId=null; save(); renderDevices(); render(); fillDevForm(null);
+}
+function deleteDevice(id){ if(!confirm("Remove this device and its stored readings?")) return;
+  try{ localStorage.removeItem("cgm.data."+id); }catch(e){}
+  devices.list=devices.list.filter(d=>d.id!==id);
+  if(devices.activeId===id){ devices.activeId=devices.list[0]?devices.list[0].id:null; data=loadData(devices.activeId); windowInit=false; }
+  save(); renderDevices(); render();
+}
+function openDevModal(){ fillDevForm(null); renderDevList(); el.devwrap.classList.add("open"); }
 
 // ───────────────────────── UI / chart ───────────────────────────────────────
 const el = id => document.getElementById(id);
-["btnConnect","btnSync","btnDisc","btnUnit","btnTheme","btnLive","btnExport","btnHealth","btnClear","serial","pairkey",
+["btnConnect","btnSync","btnDisc","btnUnit","btnTheme","btnLive","btnExport","btnHealth","btnClear","deviceSel","btnDevices",
  "dot","status","g","gu","trend","state","updated","quality","age","valid","count","stored","chart","log","ranges","tir","evtmenu",
- "healthwrap","healthclose","healthdl","healthdlinfo"]
+ "healthwrap","healthclose","healthdl","healthdlinfo",
+ "devwrap","devclose","devlist","devname","devsn","devkey","devsave"]
  .forEach(id=>el[id]=document.getElementById(id));
 function setStatus(t,cls){ el.status.textContent=t; el.dot.className="dot "+(cls||""); }
 function log(m){ el.log.textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + el.log.textContent; }
@@ -516,7 +606,7 @@ function addEvent(label, icon){ if(evtPendingT==null) return;
 function hideEvtMenu(){ if(el.evtmenu) el.evtmenu.style.display="none"; }
 document.addEventListener("click", e=>{ if(el.evtmenu && el.evtmenu.style.display==="block"
   && !el.evtmenu.contains(e.target) && e.target!==el.chart && !el.chart.contains(e.target)) hideEvtMenu(); });
-document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ hideEvtMenu(); el.healthwrap.classList.remove("open"); } });
+document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ hideEvtMenu(); el.healthwrap.classList.remove("open"); el.devwrap.classList.remove("open"); } });
 function stateLabel(idx){ return idx>=60?"ACTIVE":"WARMING-UP"; }
 function trendArrow(t){ if(t<-30)return"↓↓"; if(t<-20)return"↓"; if(t<-10)return"↘";
   if(t<11)return"→"; if(t<21)return"↗"; if(t<31)return"↑"; return"↑↑"; }
@@ -557,13 +647,16 @@ el.healthdl.onclick=exportHealthJson;
 el.btnClear.onclick=()=>{ if(confirm("Clear all stored readings and events?")){ data={sensorStartIso:null,records:{},events:[]};
   save(); render(); log("data cleared"); } };
 el.btnLive.onclick=liveView;
-el.serial.value=settings.serial; el.pairkey.value=settings.pairkey;
-el.serial.onchange=()=>{ settings.serial=el.serial.value.trim(); save(); };
-el.pairkey.onchange=()=>{ settings.pairkey=el.pairkey.value.trim().replace(/\s/g,""); save(); };
+el.deviceSel.onchange=()=>setActiveDevice(el.deviceSel.value);
+el.btnDevices.onclick=openDevModal;
+el.devclose.onclick=()=>el.devwrap.classList.remove("open");
+el.devwrap.onclick=e=>{ if(e.target===el.devwrap) el.devwrap.classList.remove("open"); };
+el.devsave.onclick=saveDeviceForm;
 
 document.documentElement.dataset.theme = settings.theme;   // apply saved theme (survives refresh)
 el.btnTheme.textContent = "theme: " + settings.theme;
 if(!navigator.bluetooth) log("⚠ Web Bluetooth not available. Use Chrome/Edge on desktop/Android over https or localhost.");
+renderDevices();
 render();   // restore from localStorage on load (survives refresh)
 log("ready — click Connect");
 </script>

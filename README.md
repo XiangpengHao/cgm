@@ -36,10 +36,11 @@ access to your transmitter. Never commit it.
 # locally:
 python3 -m http.server 8000        # then open Chrome at http://localhost:8000/
 ```
-Open it, type your **serial** and **pair key** into the fields (saved in your browser's
-localStorage, never in the page source), and click **Connect**. It handshakes, backfills only the
-missing history, charts it with a target-range band, and persists across refresh. Unit toggle
-(mg/dL ↔ mmol/L), light/dark theme, CSV export, and double-click-to-log events (coffee/meal/etc.).
+Open it, click **devices…** to add a device (name + SN + pair key — multiple devices supported,
+switch with the dropdown; all saved in your browser's localStorage, never in the page source), then
+**Connect**. It handshakes, backfills only the missing history, charts it with zone shading, and
+persists per device across refresh. Unit toggle (mg/dL ↔ mmol/L), light/dark theme, CSV /
+Apple-Health export, and double-click-to-log events (coffee/meal/etc.).
 **Chrome/Edge on desktop or Android only** — Safari/Firefox/iOS don't support Web Bluetooth.
 Libraries (crypto-js, echarts) load from the jsDelivr CDN, pinned with Subresource Integrity hashes.
 
