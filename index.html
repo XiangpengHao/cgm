@@ -66,6 +66,13 @@
   #evtmenu input[type=text]{ flex:1; width:auto; }
   #log { font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--mut); white-space:pre-wrap;
          max-height:140px; overflow:auto; margin-top:16px; border-top:1px solid var(--line); padding-top:10px; }
+  #healthwrap{ position:fixed; inset:0; z-index:60; display:none; background:rgba(0,0,0,.55); overflow:auto; padding:40px 16px; }
+  #healthwrap.open{ display:block; }
+  #healthbox{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; max-width:540px; margin:0 auto; }
+  #healthbox h2{ font-size:15px; margin:0; }
+  #healthbox ol{ margin:12px 0; padding-left:20px; font-size:13px; } #healthbox li{ margin:7px 0; }
+  #healthbox ul{ margin:6px 0; padding-left:18px; } #healthbox ul li{ margin:3px 0; }
+  #healthbox code{ background:var(--field); border:1px solid var(--line); padding:1px 5px; border-radius:4px; font:11px ui-monospace,Menlo,monospace; }
 </style>
 </head>
 <body>
@@ -86,6 +93,7 @@
     <button class="ghost" id="btnTheme">theme: dark</button>
     <button class="ghost" id="btnLive" title="snap chart to the last 12 h">⟳ 12 h</button>
     <button class="ghost" id="btnExport">Export CSV</button>
+    <button class="ghost" id="btnHealth">Apple Health</button>
     <button class="ghost" id="btnClear">Clear data</button>
     <span class="sep"></span>
     <span class="muted" id="stored" style="font-size:12px">—</span>
@@ -112,6 +120,31 @@
   <div id="log"></div>
 </main>
 <div id="evtmenu"></div>
+<div id="healthwrap"><div id="healthbox">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <h2>Export to Apple Health</h2><button class="ghost" id="healthclose">close</button></div>
+  <p class="muted" style="font-size:13px;margin:8px 0 0">HealthKit is iOS-only, but Apple's built-in
+    <b>Shortcuts</b> app can log Blood Glucose — nothing to install. One-time setup:</p>
+  <div style="margin:12px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <button id="healthdl">⬇ Download Health JSON</button>
+    <span id="healthdlinfo" class="muted" style="font-size:12px">valid readings, 1 per 5 min</span>
+  </div>
+  <ol>
+    <li>Tap <b>Download Health JSON</b>, then AirDrop or save <code>glucose-health.json</code> to your iPhone (Files / iCloud Drive).</li>
+    <li>In the <b>Shortcuts</b> app, create a shortcut with these actions:
+      <ul>
+        <li><b>Get File</b> → pick the JSON</li>
+        <li><b>Get Dictionary from Input</b></li>
+        <li><b>Repeat with Each</b> →
+          <b>Get Dictionary Value</b> <code>glucose_mgdl</code>;
+          <b>Get Dictionary Value</b> <code>time</code> → <b>Get Dates from Input</b>;
+          <b>Log Health Sample</b> (Blood Glucose · mg/dL · value · date)</li>
+      </ul></li>
+    <li>Run it and allow Health access. Re-run after each new export to add readings.</li>
+  </ol>
+  <p class="muted" style="font-size:12px;margin:0">Uncalibrated CGM values — not for clinical use.
+    Tip: after building it once, use the shortcut's share button to get an iCloud link you can reuse anywhere.</p>
+</div></div>
 
 <script>
 "use strict";
@@ -314,8 +347,9 @@ function save(){ try { localStorage.setItem("cgm.data", JSON.stringify(data));
 
 // ───────────────────────── UI / chart ───────────────────────────────────────
 const el = id => document.getElementById(id);
-["btnConnect","btnSync","btnDisc","btnUnit","btnTheme","btnLive","btnExport","btnClear","serial","pairkey",
- "dot","status","g","gu","trend","state","updated","quality","age","valid","count","stored","chart","log","ranges","tir","evtmenu"]
+["btnConnect","btnSync","btnDisc","btnUnit","btnTheme","btnLive","btnExport","btnHealth","btnClear","serial","pairkey",
+ "dot","status","g","gu","trend","state","updated","quality","age","valid","count","stored","chart","log","ranges","tir","evtmenu",
+ "healthwrap","healthclose","healthdl","healthdlinfo"]
  .forEach(id=>el[id]=document.getElementById(id));
 function setStatus(t,cls){ el.status.textContent=t; el.dot.className="dot "+(cls||""); }
 function log(m){ el.log.textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + el.log.textContent; }
@@ -478,7 +512,7 @@ function addEvent(label, icon){ if(evtPendingT==null) return;
 function hideEvtMenu(){ if(el.evtmenu) el.evtmenu.style.display="none"; }
 document.addEventListener("click", e=>{ if(el.evtmenu && el.evtmenu.style.display==="block"
   && !el.evtmenu.contains(e.target) && e.target!==el.chart && !el.chart.contains(e.target)) hideEvtMenu(); });
-document.addEventListener("keydown", e=>{ if(e.key==="Escape") hideEvtMenu(); });
+document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ hideEvtMenu(); el.healthwrap.classList.remove("open"); } });
 function stateLabel(idx){ return idx>=60?"ACTIVE":"WARMING-UP"; }
 function trendArrow(t){ if(t<-30)return"↓↓"; if(t<-20)return"↓"; if(t<-10)return"↘";
   if(t<11)return"→"; if(t<21)return"↗"; if(t<31)return"↑"; return"↑↑"; }
@@ -493,6 +527,16 @@ function exportCsv(){
   a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
   a.download="aidex_glucose.csv"; a.click();
 }
+function exportHealthJson(){   // valid readings, downsampled to 1/5min, for the Apple Health Shortcut
+  const idxs=Object.keys(data.records).map(Number).sort((a,b)=>a-b);
+  const out=[];
+  idxs.forEach(i=>{ if(i%5!==0 || !data.sensorStartIso) return; const [mgdl,rs]=data.records[i];
+    if(recValid(mgdl,rs,i)) out.push({time:recTime(i).toISOString(), glucose_mgdl:mgdl}); });
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:"application/json"}));
+  a.download="glucose-health.json"; a.click();
+  el.healthdlinfo.textContent = `${out.length} readings · valid · 1 per 5 min`;
+}
 
 // ───────────────────────── wire up ──────────────────────────────────────────
 el.btnConnect.onclick=()=>connect().catch(e=>{ log("connect error: "+e.message); setStatus("error","off");
@@ -502,6 +546,10 @@ el.btnDisc.onclick=disconnect;
 el.btnUnit.onclick=()=>{ settings.unit=MGDL()?"mmol":"mgdl"; save(); render(); };
 el.btnTheme.onclick=()=>setTheme(settings.theme==="light"?"dark":"light");
 el.btnExport.onclick=exportCsv;
+el.btnHealth.onclick=()=>el.healthwrap.classList.add("open");
+el.healthclose.onclick=()=>el.healthwrap.classList.remove("open");
+el.healthwrap.onclick=e=>{ if(e.target===el.healthwrap) el.healthwrap.classList.remove("open"); };
+el.healthdl.onclick=exportHealthJson;
 el.btnClear.onclick=()=>{ if(confirm("Clear all stored readings and events?")){ data={sensorStartIso:null,records:{},events:[]};
   save(); render(); log("data cleared"); } };
 el.btnLive.onclick=liveView;
