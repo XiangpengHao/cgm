@@ -326,6 +326,15 @@ const fmt  = v => MGDL()? Math.round(v) : (v/18).toFixed(1);
 function recValid(mgdl, rs, idx){ return rs===0 && mgdl>0 && mgdl<0x3ff && idx>=60; }
 function currentValid(mgdl, rs, idx){ return recValid(mgdl,rs,idx) && (live.status==null || (live.status&0x3F)===0); }
 function recTime(idx){ return new Date(new Date(data.sensorStartIso).getTime()+idx*60000); }
+const SENSOR_LIFE_MIN=15*1440;   // AiDEX X sensor wear = 15 days
+function ageText(min){
+  if(min==null) return "—";
+  const d=Math.floor(min/1440), h=Math.floor((min%1440)/60);
+  const age = min<60 ? `${min} min` : (d>0 ? `${d}d ${h}h` : `${h}h ${min%60}m`);
+  const left=SENSOR_LIFE_MIN-min;
+  if(left<=0) return `${age} · EXPIRED (>15 d)`;
+  return `${age} / 15 d · ~${Math.ceil(left/1440)} d left`;
+}
 // glucose zone for coloring the current value (mg/dL thresholds)
 // value color, matching the chart zones: <5.6 mmol (100 mg/dL) green, 5.6–7.8 amber, >7.8 red
 function zoneColor(mgdl){ if(mgdl<=100) return "var(--ok)"; if(mgdl<=140) return "var(--warn)"; return "var(--bad)"; }
@@ -335,7 +344,6 @@ function renderRanges(){ const mg=MGDL(), U=mg?"mg/dL":"mmol/L";
        ["post-meal","&lt; 140","140–199","≥ 200"]]
     : [["fasting","&lt; 5.6","5.6–6.9","≥ 7.0"],
        ["post-meal","&lt; 7.8","7.8–11.0","≥ 11.1"]];
-  dx.push(["A1C","&lt; 5.7%","5.7–6.4%","≥ 6.5%"]);
   const head=`<tr><th style="text-align:left">test</th><th style="color:var(--ok)">normal</th>`
     +`<th style="color:var(--warn)">pre</th><th style="color:var(--bad)">diabetes</th></tr>`;
   const body=dx.map(r=>`<tr><td style="text-align:left">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("");
@@ -410,7 +418,10 @@ function render(){
     el.g.textContent=fmt(mgdl); el.gu.textContent=MGDL()?"mg/dL":"mmol/L";
     el.updated.textContent = data.sensorStartIso? recTime(last).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "—";
     el.quality.textContent = live.quality!=null? live.quality : "—";
-    el.age.textContent = (live.timeOffset!=null?live.timeOffset:last)+" min";
+    const ageMin = live.timeOffset!=null? live.timeOffset : last;
+    el.age.textContent = ageText(ageMin);
+    el.age.style.color = (SENSOR_LIFE_MIN-ageMin)<=0 ? "var(--bad)"
+                       : (SENSOR_LIFE_MIN-ageMin) < 2*1440 ? "var(--warn)" : "var(--ink)";
     const v=currentValid(mgdl,rs,last);
     el.g.style.color = v? zoneColor(mgdl) : "var(--mut)";
     el.valid.innerHTML = v? '<span class="ok">valid</span>'

@@ -95,7 +95,6 @@ details, byte maps, and a reproducible worked example: **[PROTOCOL.md](PROTOCOL.
 |---|---|---|---|
 | Fasting (8 h+) | < 100 (< 5.6) | 100–125 (5.6–6.9) | ≥ 126 (≥ 7.0) |
 | 2 h after 75 g (OGTT) | < 140 (< 7.8) | 140–199 (7.8–11.0) | ≥ 200 (≥ 11.1) |
-| A1C | < 5.7% | 5.7–6.4% | ≥ 6.5% |
 
 mg/dL (mmol/L). Sources: [Mayo Clinic — blood sugar testing](https://www.mayoclinic.org/diseases-conditions/diabetes/in-depth/blood-sugar/art-20046628), [Mayo Clinic — diabetes diagnosis](https://www.mayoclinic.org/diseases-conditions/diabetes/diagnosis-treatment/drc-20371451).
 
