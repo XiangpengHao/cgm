@@ -81,6 +81,7 @@
   #devbox input[type=text]{ width:100%; }
   #devbox code{ background:var(--field); border:1px solid var(--line); padding:1px 5px; border-radius:4px; font:11px ui-monospace,Menlo,monospace; }
   .devrow{ display:flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  #devbox a{ color:var(--acc); }
 </style>
 </head>
 <body>
@@ -157,26 +158,7 @@
   <p class="muted" style="font-size:12px;margin:0">Uncalibrated CGM values — not for clinical use.
     Tip: after building it once, use the shortcut's share button to get an iCloud link you can reuse anywhere.</p>
 </div></div>
-<div id="devwrap"><div id="devbox">
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-    <h2>Devices</h2><button class="ghost" id="devclose">close</button></div>
-  <div id="devlist" style="margin:12px 0;display:flex;flex-direction:column;gap:8px"></div>
-  <div style="border-top:1px solid var(--line);padding-top:12px">
-    <div class="muted" style="font-size:12px;margin-bottom:8px">add / edit a device</div>
-    <div style="display:flex;flex-direction:column;gap:8px">
-      <input id="devname" type="text" placeholder="name (e.g. left arm)" autocomplete="off">
-      <input id="devsn" type="text" placeholder="device SN" autocomplete="off">
-      <input id="devkey" type="text" placeholder="pair key (hex) — or use Pair to fetch it" autocomplete="off">
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button id="devpair" class="ghost">Pair (get key)</button>
-        <button id="devsave">add device</button>
-      </div>
-    </div>
-    <p class="muted" style="font-size:11px;margin:8px 0 0">Enter the SN and tap <b>Pair</b> to fetch the
-      key over Bluetooth (fresh transmitter only) — it's shown and saved, then you can start the sensor.
-      Or paste a key you already have. Everything is stored only in this browser.</p>
-  </div>
-</div></div>
+<div id="devwrap"><div id="devbox"></div></div>
 
 <script>
 "use strict";
@@ -260,7 +242,7 @@ function decodeHistBlock(p){ if(p.length<3||p[0]!==1) return null;
 
 // ───────────────────────── BLE transport ────────────────────────────────────
 const S_181F=0x181f, C_F001=0xf001, C_F002=0xf002, C_F003=0xf003;
-let device=null, f002=null, sk=null, iv=null, pending=null, pendingActivate=false;
+let device=null, f002=null, sk=null, iv=null, pending=null, pendingActivate=false, reuseConn=false;
 
 function onNotify(ev){
   const data=new Uint8Array(ev.target.value.buffer);
@@ -291,7 +273,8 @@ async function connect(){
   if(!dev0 || !dev0.serial || !dev0.pairkey){ log("No device selected — open ‘devices…’ and add a SN + pair key."); return; }
   if(!/^[0-9a-fA-F]{32}$/.test(dev0.pairkey)){ log("pair key must be 32 hex characters."); return; }
   setStatus("requesting device…","busy");
-  device=await navigator.bluetooth.requestDevice({filters:[{services:[S_181F]}], optionalServices:[S_181F]});
+  if(!(reuseConn && device)) device=await navigator.bluetooth.requestDevice({filters:[{services:[S_181F]}], optionalServices:[S_181F]});
+  reuseConn=false;                                   // reuse the device granted during pairing (no 2nd chooser)
   device.addEventListener("gattserverdisconnected", onDisconnect);
   setStatus("connecting…","busy");
   const server=await device.gatt.connect();
@@ -326,7 +309,8 @@ async function tryActivate(){
 // First-time pairing over BLE (fresh transmitter): write SN-derived secret to F001, read 16-byte key.
 async function blePair(serial){
   const secret=derivePairSecret(serial);
-  const dev=await navigator.bluetooth.requestDevice({filters:[{services:[S_181F]}], optionalServices:[S_181F]});
+  device=await navigator.bluetooth.requestDevice({filters:[{services:[S_181F]}], optionalServices:[S_181F]});
+  const dev=device;                                  // keep the granted device so connect() can reuse it
   const server=await dev.gatt.connect();
   try{
     const svc=await server.getPrimaryService(S_181F);
@@ -341,24 +325,7 @@ async function blePair(serial){
     return toHex(key).toUpperCase();
   } finally { try{ server.disconnect(); }catch(e){} }
 }
-async function pairFlow(){
-  if(!navigator.bluetooth){ alert("Web Bluetooth needs Chrome/Edge over https or localhost."); return; }
-  const serial=el.devsn.value.trim();
-  if(!serial){ alert("Enter the device SN first."); return; }
-  el.devpair.disabled=true; el.devpair.textContent="pairing…";
-  try{
-    const key=await blePair(serial);
-    el.devkey.value=key;
-    saveDeviceForm();                                   // persist name/SN/key
-    const d=devices.list.find(x=>x.serial===serial); if(d) setActiveDevice(d.id);
-    log("paired ✓ key="+key);
-    alert("Paired ✓\n\nPair key (saved in this browser):\n"+key);
-    if(confirm("Start a NEW sensor session now?\n\nIRREVERSIBLE — this begins the sensor's 15-day life and a ~60-minute warmup. Only do this with a fresh sensor applied to the body.")){
-      pendingActivate=true; el.devwrap.classList.remove("open"); await connect();
-    }
-  }catch(e){ log("pair failed: "+e.message); alert("Pairing failed: "+e.message); }
-  finally { el.devpair.disabled=false; el.devpair.textContent="Pair (get key)"; }
-}
+// (pairing is driven by the add-sensor wizard — see wizPair below)
 function onDisconnect(){ sk=null; f002=null; stopLivePoll();
   setStatus("disconnected","off"); el.btnSync.disabled=true; el.btnDisc.disabled=true;
   el.btnConnect.disabled=false; log("disconnected"); }
@@ -461,52 +428,131 @@ function save(){ try {
 function setActiveDevice(id){ devices.activeId=id||null; data=loadData(devices.activeId);
   windowInit=false; save(); renderDevices(); render(); }
 const esc = s => String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-function renderDevices(){
+function renderDevices(){                              // toolbar dropdown
   const sel=el.deviceSel;
   if(sel){ sel.innerHTML="";
-    if(!devices.list.length){ const o=document.createElement("option"); o.value=""; o.textContent="(no device)"; sel.appendChild(o); }
+    if(!devices.list.length){ const o=document.createElement("option"); o.value=""; o.textContent="(no sensor)"; sel.appendChild(o); }
     devices.list.forEach(d=>{ const o=document.createElement("option"); o.value=d.id;
-      o.textContent=d.name||d.serial||"device"; if(d.id===devices.activeId) o.selected=true; sel.appendChild(o); }); }
-  if(el.devwrap && el.devwrap.classList.contains("open")) renderDevList();
+      o.textContent=d.name||d.serial||"sensor"; if(d.id===devices.activeId) o.selected=true; sel.appendChild(o); }); }
+  if(el.devwrap.classList.contains("open") && devView==="home") renderDevModal();
 }
-function renderDevList(){
-  el.devlist.innerHTML = devices.list.length ? "" : '<div class="muted" style="font-size:13px">no devices yet — add one below.</div>';
-  devices.list.forEach(d=>{
-    const row=document.createElement("div"); row.className="devrow"; const act=d.id===devices.activeId;
-    const info=document.createElement("div"); info.style.cssText="flex:1;min-width:0";
-    info.innerHTML=`<b>${esc(d.name||d.serial||"device")}</b><span class="muted" style="font-size:11px"> · SN ${esc(d.serial||"—")}${d.pairkey?"":" · no key"}</span>`;
-    const use=document.createElement("button"); use.className="ghost"; use.textContent=act?"active":"use"; use.disabled=act; use.onclick=()=>setActiveDevice(d.id);
-    const ed=document.createElement("button"); ed.className="ghost"; ed.textContent="edit"; ed.onclick=()=>fillDevForm(d);
-    const del=document.createElement("button"); del.className="ghost"; del.textContent="✕"; del.title="remove"; del.onclick=()=>deleteDevice(d.id);
-    row.append(info,use,ed,del); el.devlist.appendChild(row);
-  });
-}
-let devEditId=null;
-function fillDevForm(d){ devEditId=d?d.id:null;
-  el.devname.value=d?(d.name||""):""; el.devsn.value=d?(d.serial||""):""; el.devkey.value=d?(d.pairkey||""):"";
-  el.devsave.textContent=d?"save changes":"add device"; if(d) el.devname.focus(); }
-function saveDeviceForm(){
-  const name=el.devname.value.trim(), serial=el.devsn.value.trim(), pairkey=el.devkey.value.trim().replace(/\s/g,"");
-  if(!serial){ alert("enter the device SN"); return; }
-  if(pairkey && !/^[0-9a-fA-F]{32}$/.test(pairkey)){ alert("pair key must be 32 hex characters"); return; }
-  if(devEditId){ const d=devices.list.find(x=>x.id===devEditId); if(d){ d.name=name||serial; d.serial=serial; d.pairkey=pairkey; } }
-  else { const id=newId(); devices.list.push({id, name:name||serial, serial, pairkey}); if(!devices.activeId){ devices.activeId=id; data=loadData(id); } }
-  devEditId=null; save(); renderDevices(); render(); fillDevForm(null);
-}
-function deleteDevice(id){ if(!confirm("Remove this device and its stored readings?")) return;
+function deleteDevice(id){ if(!confirm("Remove this sensor and its stored readings?")) return;
   try{ localStorage.removeItem("cgm.data."+id); }catch(e){}
   devices.list=devices.list.filter(d=>d.id!==id);
   if(devices.activeId===id){ devices.activeId=devices.list[0]?devices.list[0].id:null; data=loadData(devices.activeId); windowInit=false; }
   save(); renderDevices(); render();
 }
-function openDevModal(){ fillDevForm(null); renderDevList(); el.devwrap.classList.add("open"); }
+function renameDevice(id){ const d=devices.list.find(x=>x.id===id); if(!d) return;
+  const n=prompt("Name for this sensor:", d.name||d.serial||""); if(n==null) return;
+  d.name=n.trim()||d.serial; save(); renderDevices(); renderDevModal(); }
+
+// ── devices modal: home (sensor list) + guided add-sensor wizard ─────────────
+let devView="home", wiz=null;
+function openDevModal(){ devView="home"; wiz=null; el.devwrap.classList.add("open"); renderDevModal(); }
+function closeDevModal(){ el.devwrap.classList.remove("open"); }
+function renderDevModal(){
+  const box=el.devbox, q=s=>box.querySelector(s);
+  if(devView==="wizard"){ box.innerHTML=wizHTML(); wizWire(); return; }
+  const rows = devices.list.length ? devices.list.map(d=>{ const act=d.id===devices.activeId;
+    return `<div class="devrow"><span class="dot ${act?'on':''}"></span>
+      <div style="flex:1;min-width:0"><b>${esc(d.name||d.serial||'sensor')}</b>
+        <div class="muted" style="font-size:11px">SN ${esc(d.serial||'—')}${d.pairkey?'':' · not paired'}</div></div>
+      <button class="ghost" data-use="${d.id}" ${act?'disabled':''}>${act?'active':'use'}</button>
+      <button class="ghost" data-ren="${d.id}">rename</button>
+      <button class="ghost" data-del="${d.id}">✕</button></div>`; }).join("")
+    : '<div class="muted" style="font-size:13px">No sensors yet — add one to begin.</div>';
+  box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <h2>Sensors</h2><button class="ghost" data-close>close</button></div>
+    <div style="margin:12px 0;display:flex;flex-direction:column;gap:8px">${rows}</div>
+    <button data-add style="width:100%">＋ Add a sensor</button>`;
+  q("[data-close]").onclick=closeDevModal;
+  q("[data-add]").onclick=startWizard;
+  box.querySelectorAll("[data-use]").forEach(b=>b.onclick=()=>{ setActiveDevice(b.dataset.use); renderDevModal(); });
+  box.querySelectorAll("[data-ren]").forEach(b=>b.onclick=()=>renameDevice(b.dataset.ren));
+  box.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{ deleteDevice(b.dataset.del); renderDevModal(); });
+}
+function startWizard(){ devView="wizard"; wiz={step:0,name:"",serial:"",key:"",deviceId:null,activate:false}; renderDevModal(); }
+function wizGo(s){ wiz.step=s; renderDevModal(); }
+function wizHead(n,title){ return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <h2>${title}</h2><button class="ghost" data-cancel>cancel</button></div>
+    ${n?`<div class="muted" style="font-size:12px;margin-top:4px">Step ${n} of 3</div>`:""}`; }
+function wizHTML(){ const s=wiz.step;
+  if(s===0) return wizHead(0,"Add a sensor")+`
+    <p class="muted" style="font-size:13px">About a minute. We'll <b>pair</b>, <b>start</b> the sensor, then <b>connect</b> — explained as we go.</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+      <label class="k">Name (optional)</label><input id="wname" type="text" placeholder="e.g. Left arm" value="${esc(wiz.name)}" autocomplete="off">
+      <label class="k">Serial number (SN)</label><input id="wsn" type="text" placeholder="printed on the transmitter" value="${esc(wiz.serial)}" autocomplete="off">
+      <p class="muted" style="font-size:11px;margin:0">~10 letters/numbers, on the transmitter and its box.</p></div>
+    <div style="display:flex;margin-top:14px"><span style="flex:1"></span><button data-next>Next →</button></div>`;
+  if(s===1) return wizHead(1,"Pair")+`
+    <p style="font-size:13px">Pairing makes a <b>private key</b> so only this device can read your sensor — it happens once.
+      Keep the transmitter (clipped onto a sensor) nearby and powered on.</p>
+    <div id="wmsg" style="font-size:13px;margin:10px 0">${wiz.key?'✓ Paired — key saved: <code>'+esc(wiz.key)+'</code>':''}</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+      <button data-back class="ghost">← back</button><span style="flex:1"></span>
+      ${wiz.key?'<button data-next>Next →</button>':'<button data-pair>Pair now</button>'}</div>
+    <p class="muted" style="font-size:11px;margin:12px 0 0">When the browser asks, pick your AiDEX device.
+      Already have a key? <a href="#" data-manual>enter it manually</a>.</p>`;
+  if(s===2) return wizHead(2,"Start the sensor")+`
+    <p style="font-size:13px">Starting begins a <b>~1-hour warmup</b>, then ~15 days of readings.
+      <b>⚠ A sensor can be started only once</b> — do this only when it's applied to your body and the transmitter is clipped on.</p>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0">
+      <input type="checkbox" id="wapplied"> The sensor is applied to my body</label>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+      <button data-back class="ghost">← back</button><span style="flex:1"></span>
+      <button data-skip class="ghost">Already started — skip</button>
+      <button data-activate disabled>Start the sensor</button></div>`;
+  return wizHead(3,"Connect")+`
+    <p id="wmsg" style="font-size:13px">Connecting and loading your readings…</p>
+    <div style="display:flex;margin-top:10px"><span style="flex:1"></span><button data-done disabled>Done</button></div>`;
+}
+function wizWire(){ const box=el.devbox, q=s=>box.querySelector(s);
+  if(q("[data-cancel]")) q("[data-cancel]").onclick=()=>{ devView="home"; renderDevModal(); };
+  if(q("[data-back]")) q("[data-back]").onclick=()=>wizGo(wiz.step-1);
+  if(wiz.step===0) q("[data-next]").onclick=()=>{ wiz.name=q("#wname").value.trim(); wiz.serial=q("#wsn").value.trim();
+    if(!wiz.serial){ alert("Enter the serial number (SN)."); return; } wizGo(1); };
+  if(wiz.step===1){ if(q("[data-pair]")) q("[data-pair]").onclick=wizPair;
+    if(q("[data-next]")) q("[data-next]").onclick=()=>wizGo(2);
+    if(q("[data-manual]")) q("[data-manual]").onclick=e=>{ e.preventDefault(); wizManualKey(); }; }
+  if(wiz.step===2){ const cb=q("#wapplied"), act=q("[data-activate]");
+    cb.onchange=()=>{ act.disabled=!cb.checked; };
+    act.onclick=()=>{ wiz.activate=true; wizGo(3); wizConnect(); };
+    q("[data-skip]").onclick=()=>{ wiz.activate=false; wizGo(3); wizConnect(); }; }
+  if(wiz.step===3 && q("[data-done]")) q("[data-done]").onclick=closeDevModal;
+}
+async function wizPair(){
+  if(!navigator.bluetooth){ alert("Web Bluetooth needs Chrome/Edge over https or localhost."); return; }
+  const box=el.devbox, btn=box.querySelector("[data-pair]"), msg=box.querySelector("#wmsg");
+  btn.disabled=true; btn.textContent="pairing…"; if(msg) msg.textContent="Pick your AiDEX device when the browser asks…";
+  try{ const key=await blePair(wiz.serial); wiz.key=key; upsertWizDevice(); log("paired ✓ key="+key); renderDevModal(); }
+  catch(e){ log("pair failed: "+e.message); renderDevModal();
+    const m=el.devbox.querySelector("#wmsg"); if(m) m.innerHTML='<span class="bad">Couldn’t pair: '+esc(e.message)+'</span>'; }
+}
+function wizManualKey(){ const k=prompt("Paste the 32-character pair key:"); if(k==null) return;
+  const key=k.trim().replace(/\s/g,"").toUpperCase();
+  if(!/^[0-9a-fA-F]{32}$/.test(key)){ alert("That doesn't look like a 32-hex key."); return; }
+  wiz.key=key; upsertWizDevice(); renderDevModal(); }
+function upsertWizDevice(){ let d=devices.list.find(x=>x.serial===wiz.serial);
+  if(d){ d.name=wiz.name||d.name||wiz.serial; if(wiz.key) d.pairkey=wiz.key; }
+  else { d={id:newId(), name:wiz.name||wiz.serial, serial:wiz.serial, pairkey:wiz.key}; devices.list.push(d); }
+  devices.activeId=d.id; data=loadData(d.id); windowInit=false; wiz.deviceId=d.id; save(); renderDevices(); render(); }
+async function wizConnect(){ const box=el.devbox, msg=()=>box.querySelector("#wmsg"), done=()=>box.querySelector("[data-done]");
+  if(wiz.deviceId){ devices.activeId=wiz.deviceId; data=loadData(wiz.deviceId); }
+  pendingActivate=!!wiz.activate; reuseConn=true;
+  try{ await connect();
+    if(msg()) msg().innerHTML = wiz.activate ? '✓ All set! Your sensor is <b>warming up</b> — readings appear in about an hour.'
+                                             : '✓ Connected — loading your readings.';
+  }catch(e){ log("wizard connect failed: "+e.message);
+    if(msg()) msg().innerHTML='<span class="bad">Connection problem: '+esc(e.message)+'. Close this and tap Connect to retry.</span>'; }
+  finally{ if(done()) done().disabled=false; }
+}
 
 // ───────────────────────── UI / chart ───────────────────────────────────────
 const el = id => document.getElementById(id);
 ["btnConnect","btnSync","btnDisc","btnUnit","btnTheme","btnLive","btnExport","btnHealth","btnClear","deviceSel","btnDevices",
  "dot","status","g","gu","trend","state","updated","quality","age","valid","count","stored","chart","log","ranges","tir","evtmenu",
  "healthwrap","healthclose","healthdl","healthdlinfo",
- "devwrap","devclose","devlist","devname","devsn","devkey","devsave","devpair"]
+ "devwrap","devbox"]
  .forEach(id=>el[id]=document.getElementById(id));
 function setStatus(t,cls){ el.status.textContent=t; el.dot.className="dot "+(cls||""); }
 function log(m){ el.log.textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + el.log.textContent; }
@@ -712,10 +758,7 @@ el.btnClear.onclick=()=>{ if(confirm("Clear all stored readings and events?")){ 
 el.btnLive.onclick=liveView;
 el.deviceSel.onchange=()=>setActiveDevice(el.deviceSel.value);
 el.btnDevices.onclick=openDevModal;
-el.devclose.onclick=()=>el.devwrap.classList.remove("open");
-el.devwrap.onclick=e=>{ if(e.target===el.devwrap) el.devwrap.classList.remove("open"); };
-el.devsave.onclick=saveDeviceForm;
-el.devpair.onclick=pairFlow;
+el.devwrap.onclick=e=>{ if(e.target===el.devwrap) closeDevModal(); };
 
 document.documentElement.dataset.theme = settings.theme;   // apply saved theme (survives refresh)
 el.btnTheme.textContent = "theme: " + settings.theme;
