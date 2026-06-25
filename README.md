@@ -67,6 +67,29 @@ python3 cgm.py start-sensor --yes            # IRREVERSIBLE; refuses without --y
                                              # non-fresh sensor without --force
 ```
 
+## Export to Apple Health (no iOS app)
+
+HealthKit is iOS-only, so something on the iPhone must write the data — but you don't have to build
+an app: Apple's built-in **Shortcuts** can log Blood Glucose to Health.
+
+1. Export a **downsampled, valid-only** JSON (Health doesn't need 1-minute resolution, and Shortcuts
+   logs samples one at a time):
+   ```sh
+   python3 cgm.py history --last 1d --valid-only --every 5 --format json > glucose.json
+   ```
+2. Get `glucose.json` onto the iPhone — AirDrop, or save to iCloud Drive / Files.
+3. Build a Shortcut once:
+   - **Get File** → pick `glucose.json`  (or **Get Contents of URL** if you host it)
+   - **Get Dictionary from** the file → a list
+   - **Repeat with Each** item in the list:
+     - **Get Dictionary Value** `glucose_mgdl`  → the value
+     - **Get Dictionary Value** `time` → **Get Dates from Input** → the date
+     - **Log Health Sample** → type **Blood Glucose**, unit **mg/dL**, Value = the value, Date = the date
+4. Run it and grant Health write permission once; re-run after each export to add new readings.
+
+Keep the count modest (use `--last` / `--every`). These are **uncalibrated** CGM values — don't treat
+them as clinical. (If you also use the official AiDEX app, it may already sync to Apple Health.)
+
 ## Protocol, in one paragraph
 
 Service `181F`; characteristic `F002` carries encrypted **DevComm2** packets. From the serial you

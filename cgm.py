@@ -583,6 +583,8 @@ async def cmd_history(args) -> int:
 
         if args.valid_only:
             records = [r for r in records if r.valid]
+        if args.every and args.every > 1:          # downsample: one reading per N minutes
+            records = [r for r in records if r.index % args.every == 0]
         _emit_history(records, args.format)
         return 0
     return await with_session(args, fn)
@@ -699,8 +701,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--to-index", type=int, dest="to_index", help="raw end sensor-minute index")
     s.add_argument("--format", choices=["table", "csv", "json"], default="table")
     s.add_argument("--valid-only", action="store_true", help="omit warmup/invalid records")
+    s.add_argument("--every", type=int, metavar="MIN", help="downsample to one reading per MIN minutes")
     s.set_defaults(func=cmd_history, last=None, since=None, until=None,
-                   from_index=None, to_index=None)
+                   from_index=None, to_index=None, every=None)
 
     s = sub.add_parser("start-sensor", parents=[common],
                        help="IRREVERSIBLE: start a new sensor session")
