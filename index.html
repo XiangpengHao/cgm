@@ -48,8 +48,8 @@
          white-space:pre-wrap; max-height:140px; overflow:auto; margin-top:12px;
          border-top:1px solid var(--line); padding-top:10px; }
   .pill{ font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); }
-  table.dx{ border-collapse:collapse; width:100%; font-size:13px; min-width:380px; }
-  table.dx th, table.dx td{ border:1px solid var(--line); padding:5px 9px; text-align:center; }
+  table.dx{ border-collapse:collapse; width:100%; font-size:11px; }
+  table.dx th, table.dx td{ border:1px solid var(--line); padding:3px 6px; text-align:center; }
   table.dx th{ font-weight:600; }
   .warnbar{ background:var(--warnbg); border:1px solid var(--warnline); color:var(--warnink);
             padding:8px 12px; border-radius:8px; margin-bottom:14px; font-size:13px; }
@@ -77,20 +77,22 @@
   </div>
 
   <div class="grid">
-    <div class="card" id="current">
-      <div class="muted">current glucose</div>
-      <div><span class="big" id="g">—</span> <span class="unit" id="gu">mg/dL</span></div>
-      <div style="margin:10px 0 6px"><span id="trend" class="pill">trend —</span>
-        <span id="state" class="pill">—</span></div>
-      <div class="row"><span>updated</span><b id="updated">—</b></div>
-      <div class="row"><span>quality</span><b id="quality">—</b></div>
-      <div class="row"><span>sensor age</span><b id="age">—</b></div>
-      <div class="row"><span>validity</span><b id="valid">—</b></div>
-      <div class="row"><span>readings stored</span><b id="count">0</b></div>
+    <div>
+      <div class="card" id="current">
+        <div class="muted">current glucose</div>
+        <div><span class="big" id="g">—</span> <span class="unit" id="gu">mg/dL</span></div>
+        <div style="margin:10px 0 6px"><span id="trend" class="pill">trend —</span>
+          <span id="state" class="pill">—</span></div>
+        <div class="row"><span>updated</span><b id="updated">—</b></div>
+        <div class="row"><span>quality</span><b id="quality">—</b></div>
+        <div class="row"><span>sensor age</span><b id="age">—</b></div>
+        <div class="row"><span>validity</span><b id="valid">—</b></div>
+        <div class="row"><span>readings stored</span><b id="count">0</b></div>
+      </div>
+      <div class="card" id="ranges" style="margin-top:16px"></div>
     </div>
     <div class="card"><div id="chart"></div></div>
   </div>
-  <div class="card" id="ranges" style="margin-top:16px"></div>
   <div id="log"></div>
 </main>
 
@@ -310,28 +312,20 @@ function recTime(idx){ return new Date(new Date(data.sensorStartIso).getTime()+i
 function zoneColor(mgdl){ if(mgdl<54||mgdl>250) return "var(--bad)";
   if(mgdl<70||mgdl>180) return "var(--warn)"; return "var(--ok)"; }
 function renderRanges(){ const mg=MGDL(), U=mg?"mg/dL":"mmol/L";
-  // CGM hypo/hyper zones — these color the live value & the chart's target band
-  const zones=[["low",mg?"< 70":"< 3.9","var(--warn)"],
-               ["in range (target)",mg?"70–180":"3.9–10.0","var(--ok)"],
-               ["high",mg?"> 180":"> 10.0","var(--warn)"],
-               ["urgent",mg?"< 54 or > 250":"< 3.0 or > 13.9","var(--bad)"]];
-  // diagnostic thresholds (Mayo Clinic / ADA), unit-aware
   const dx = mg
-    ? [["Fasting (8 h+)","&lt; 100","100–125","≥ 126"],
-       ["2 h after meal (OGTT)","&lt; 140","140–199","≥ 200"]]
-    : [["Fasting (8 h+)","&lt; 5.6","5.6–6.9","≥ 7.0"],
-       ["2 h after meal (OGTT)","&lt; 7.8","7.8–11.0","≥ 11.1"]];
-  const zonesHtml=zones.map(z=>`<span class="pill" style="border-color:${z[2]}"><span style="color:${z[2]}">●</span> ${z[0]}: <b>${z[1]}</b></span>`).join("");
-  const head=`<tr><th style="text-align:left">test</th><th style="color:var(--ok)">normal</th><th style="color:var(--warn)">prediabetes</th><th style="color:var(--bad)">diabetes</th></tr>`;
+    ? [["fasting","&lt; 100","100–125","≥ 126"],
+       ["post-meal","&lt; 140","140–199","≥ 200"]]
+    : [["fasting","&lt; 5.6","5.6–6.9","≥ 7.0"],
+       ["post-meal","&lt; 7.8","7.8–11.0","≥ 11.1"]];
+  dx.push(["A1C","&lt; 5.7%","5.7–6.4%","≥ 6.5%"]);
+  const head=`<tr><th style="text-align:left">test</th><th style="color:var(--ok)">normal</th>`
+    +`<th style="color:var(--warn)">pre</th><th style="color:var(--bad)">diabetes</th></tr>`;
   const body=dx.map(r=>`<tr><td style="text-align:left">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("");
   el.ranges.innerHTML =
-     `<div class="muted" style="margin-bottom:6px">CGM zones (${U}) — color the live value &amp; chart band</div>`
-    +`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">${zonesHtml}</div>`
-    +`<div class="muted" style="margin-bottom:6px">diagnostic reference — Mayo Clinic (${U})`
-    +` <span style="opacity:.7">— for blood tests under fasting / glucose-tolerance conditions</span></div>`
-    +`<div style="overflow-x:auto"><table class="dx">${head}${body}</table></div>`
-    +`<div class="muted" style="margin-top:8px;font-size:12px">A1C: normal &lt; 5.7% · prediabetes 5.7–6.4% · diabetes ≥ 6.5%. `
-    +`General guidance, not medical advice — diagnostic thresholds apply to proper blood tests, not arbitrary CGM (interstitial) readings.</div>`; }
+     `<div class="muted" style="margin-bottom:8px">reference · diagnostic (${U})</div>`
+    +`<table class="dx">${head}${body}</table>`
+    +`<div class="muted" style="margin-top:8px;font-size:11px">CGM in-range target <b>${mg?"70–180":"3.9–10.0"}</b>. `
+    +`Diagnostic cut-offs (Mayo Clinic) — fasting / glucose-tolerance blood tests, not CGM readings.</div>`; }
 
 let chart=null;
 window.addEventListener("resize",()=>chart&&chart.resize());
