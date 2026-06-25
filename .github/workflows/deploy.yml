@@ -29,6 +29,7 @@ jobs:
         run: |
           mkdir -p _site
           cp index.html _site/index.html
+          cp aidex-to-health.shortcut _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

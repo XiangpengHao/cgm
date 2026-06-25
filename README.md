@@ -87,6 +87,11 @@ an app: Apple's built-in **Shortcuts** can log Blood Glucose to Health.
      - **Log Health Sample** → type **Blood Glucose**, unit **mg/dL**, Value = the value, Date = the date
 4. Run it and grant Health write permission once; re-run after each export to add new readings.
 
+An **experimental** prebuilt shortcut (`aidex-to-health.shortcut`) is included — import it with
+*Settings ▸ Shortcuts ▸ Advanced ▸ Allow Untrusted Shortcuts* enabled. It's hand-authored and
+untested (the Health action's type/unit enums are undocumented), so if it won't import or logs
+nothing, build it from the steps above — that path is reliable.
+
 Keep the count modest (use `--last` / `--every`). These are **uncalibrated** CGM values — don't treat
 them as clinical. (If you also use the official AiDEX app, it may already sync to Apple Health.)
 
