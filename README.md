@@ -1,8 +1,8 @@
 # AiDEX X / GX-01S — open BLE reader
 
 Reverse-engineered, interoperable tools to read a **MicroTech AiDEX X (model GX-01S)** continuous
-glucose monitor over Bluetooth Low Energy — a browser app, a Python CLI, and a macOS probe. The
-full wire protocol is documented in **[PROTOCOL.md](PROTOCOL.md)**.
+glucose monitor over Bluetooth Low Energy — a browser app and a Python CLI. The full wire protocol
+is documented in **[PROTOCOL.md](PROTOCOL.md)**.
 
 > Not affiliated with MicroTech. This is experimental, uncalibrated, reverse-engineered software —
 > **not a medical device and not for treatment decisions.** Confirm anything that matters with a
@@ -13,8 +13,7 @@ full wire protocol is documented in **[PROTOCOL.md](PROTOCOL.md)**.
 | Tool | Platform | Use |
 |---|---|---|
 | **`index.html`** | Chrome/Edge (desktop, Android) — Web Bluetooth | click-to-connect web app: live reading, history sync, chart, localStorage. **Read-only.** |
-| **`cgm.py`** | any (Python + `bleak`) | CLI: `scan` / `read` / `monitor` / `history` / `info` / `start-sensor` |
-| **`CGMProbe.swift`** | macOS (CoreBluetooth) | low-level probe; also does first-time pairing |
+| **`cgm.py`** | any (Python + `bleak`) | CLI: `pair` / `scan` / `read` / `monitor` / `history` / `info` / `start-sensor` |
 
 ## Getting your device's pair key (one-time)
 
@@ -23,10 +22,10 @@ Everything is derived from the device **serial** (printed on it / in its BLE nam
 Pair once to obtain it — e.g. on macOS:
 
 ```sh
-# build CGMProbe (see below), then:
-./CGMProbe --seconds 30 --target <SERIAL> --aidex --serial <SERIAL>
-# -> prints  AIDEX_PAIR_SUCCESS key=<32 hex chars>   — save this; it's your pair key
+python3 cgm.py pair --serial <SERIAL>
+# -> prints  AIDEX_PAIR_SUCCESS serial=<SERIAL> key=<32 hex chars>   — save this; it's your pair key
 ```
+(Pairing only works on a fresh / unpaired transmitter.)
 
 Keep the pair key **private**: together with the (publicly-advertised) serial it grants full read
 access to your transmitter. Never commit it.
@@ -47,8 +46,8 @@ Libraries (crypto-js, echarts) load from the jsDelivr CDN, pinned with Subresour
 ### Deploy to GitHub Pages
 
 Push to GitHub and set **Settings → Pages → Source = GitHub Actions**. The included workflow
-(`.github/workflows/deploy.yml`) publishes `index.html` + `vendor/` on every push to `main`. The
-page ships **no secrets** — each user enters their own serial/key.
+(`.github/workflows/deploy.yml`) publishes `index.html` on every push to `main`. The page ships
+**no secrets** — each user enters their own serial/key.
 
 ## Python CLI
 
@@ -57,6 +56,7 @@ python3 -m pip install --user bleak pycryptodome
 export AIDEX_SERIAL=<your serial>            # or pass --serial / --key each time
 export AIDEX_PAIR_KEY=<your 32-hex pair key>
 
+python3 cgm.py pair --serial <SERIAL>        # one-time: obtain the pair key (fresh transmitter)
 python3 cgm.py scan                          # passive: glucose from the advertisement
 python3 cgm.py read [--json]                 # connect + handshake + current value
 python3 cgm.py monitor --interval 60         # passive reading loop
@@ -65,17 +65,6 @@ python3 cgm.py history --last 2h --format csv > glucose.csv   # backfill stored 
 python3 cgm.py history --since "21:00" --until "21:30"
 python3 cgm.py start-sensor --yes            # IRREVERSIBLE; refuses without --yes, and refuses a
                                              # non-fresh sensor without --force
-```
-
-## macOS probe (`CGMProbe.swift`)
-
-```sh
-swiftc CGMProbe.swift -o CGMProbe \
-  -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
-  -module-cache-path .build/module-cache -framework CoreBluetooth \
-  -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker Info.plist
-codesign --force --sign - --identifier local.cgm.probe CGMProbe
-./CGMProbe --seconds 30 --target <SERIAL> --aidex-key <PAIRKEY> --serial <SERIAL> --device-info --start-time
 ```
 
 ## Protocol, in one paragraph

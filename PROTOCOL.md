@@ -215,11 +215,10 @@ and only if the sensor is in tissue).
 
 ## 11. Reference implementations in this repo
 
-- `cgm.py` — Python CLI (`bleak`): `scan`, `read`, `monitor`, `info`, `history` (time-range
-  backfill), `start-sensor` (guarded).
-- `index.html` / `cgm.html` — Web Bluetooth app (Chrome/Edge): connect, handshake, sync history,
-  localStorage persistence, ECharts chart. Read-only (cannot activate a sensor).
-- `CGMProbe.swift` — macOS CoreBluetooth probe (the original reference).
+- `cgm.py` — Python CLI (`bleak`): `pair` (§4), `scan`, `read`, `monitor`, `info`, `history`
+  (time-range backfill), `start-sensor` (guarded).
+- `index.html` — Web Bluetooth app (Chrome/Edge): connect, handshake, sync history, localStorage
+  persistence, ECharts chart, event logging. Read-only (cannot activate a sensor).
 
-All three implement §3–§9 identically; the crypto was verified against the device's own captured
+Both implement §3–§9 identically; the crypto was verified against the device's own captured
 challenge→session-key vectors.

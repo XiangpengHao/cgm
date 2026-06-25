@@ -16,53 +16,56 @@
 <style>
   :root, [data-theme="dark"] {
     --bg:#0f1216; --card:#171c22; --ink:#e6edf3; --mut:#8b97a3; --acc:#4ea1ff; --accink:#04101f;
-    --ok:#37d39a; --warn:#f0a92b; --bad:#ff5d5d; --line:#262d36; --field:#0c1014;
-    --warnbg:#2a1f0c; --warnink:#f0c674; --warnline:#5a4012; }
+    --ok:#37d39a; --warn:#f0a92b; --bad:#ff5d5d; --line:#262d36; --field:#0c1014; }
   [data-theme="light"] {
     --bg:#f6f8fa; --card:#ffffff; --ink:#1f2328; --mut:#57606a; --acc:#0969da; --accink:#ffffff;
-    --ok:#1a7f5a; --warn:#9a6700; --bad:#cf222e; --line:#d0d7de; --field:#ffffff;
-    --warnbg:#fff8c5; --warnink:#7d4e00; --warnline:#d4a72c; }
+    --ok:#1a7f5a; --warn:#9a6700; --bad:#cf222e; --line:#d0d7de; --field:#ffffff; }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 -apple-system,
-         BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
-  header { display:flex; align-items:center; gap:12px; padding:14px 18px;
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  main { padding:16px; max-width:1100px; margin:0 auto; }
+
+  header { display:flex; align-items:center; gap:10px; padding:12px 16px;
            border-bottom:1px solid var(--line); flex-wrap:wrap; }
   header h1 { font-size:15px; font-weight:600; margin:0; }
-  .dot { width:9px; height:9px; border-radius:50%; background:var(--mut); display:inline-block; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--mut); flex:0 0 auto; }
   .dot.on { background:var(--ok); } .dot.busy { background:var(--warn); }
-  button { background:var(--acc); color:var(--accink); border:0; padding:8px 14px; border-radius:8px;
-           font-weight:600; cursor:pointer; }
-  button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); }
+
+  /* controls share one 32px height so toolbar/header rows align cleanly */
+  button { height:32px; padding:0 12px; font-size:13px; font-weight:600; border:0; border-radius:8px;
+           background:var(--acc); color:var(--accink); cursor:pointer; white-space:nowrap; }
+  button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); font-weight:500; }
   button:disabled { opacity:.45; cursor:default; }
-  main { padding:18px; max-width:1100px; margin:0 auto; }
+  input[type=text]{ height:32px; width:200px; padding:0 10px; font:12px ui-monospace,Menlo,monospace;
+                    background:var(--field); border:1px solid var(--line); border-radius:8px; color:var(--ink); }
+  #serial{ width:120px; } #pairkey{ width:250px; }
+  label.k { color:var(--mut); font-size:12px; }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+  .toolbar .sep { flex:1; }
+
   .grid { display:grid; grid-template-columns:300px 1fr; gap:16px; align-items:start; }
   @media (max-width:760px){ .grid{ grid-template-columns:1fr; } }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
-  .big { font-size:54px; font-weight:700; line-height:1; }
-  .unit { font-size:16px; color:var(--mut); font-weight:600; }
-  .row { display:flex; justify-content:space-between; gap:8px; padding:3px 0; color:var(--mut); }
+  .card + .card { margin-top:16px; }
+  .bigrow { display:flex; align-items:baseline; gap:6px; margin-top:2px; }
+  .big { font-size:52px; font-weight:700; line-height:1.05; }
+  .unit { font-size:15px; color:var(--mut); font-weight:600; }
+  .pills { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0 10px; }
+  .row { display:flex; justify-content:space-between; gap:8px; padding:4px 0; color:var(--mut); font-size:13px; }
   .row b { color:var(--ink); font-weight:600; }
   #chart { height:420px; width:100%; }
   .muted { color:var(--mut); } .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
-  .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px; align-items:center; }
-  input[type=text]{ background:var(--field); border:1px solid var(--line); color:var(--ink);
-                    padding:6px 8px; border-radius:6px; font:12px monospace; width:230px; }
-  label.k { color:var(--mut); font-size:12px; }
-  #log { font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--mut);
-         white-space:pre-wrap; max-height:140px; overflow:auto; margin-top:12px;
-         border-top:1px solid var(--line); padding-top:10px; }
-  .pill{ font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); }
+  .pill{ font-size:11px; padding:3px 9px; border-radius:999px; border:1px solid var(--line); white-space:nowrap; }
   table.dx{ border-collapse:collapse; width:100%; font-size:11px; }
-  table.dx th, table.dx td{ border:1px solid var(--line); padding:3px 6px; text-align:center; }
+  table.dx th, table.dx td{ border:1px solid var(--line); padding:4px 6px; text-align:center; }
   table.dx th{ font-weight:600; }
-  #evtmenu{ position:fixed; z-index:50; display:none; width:236px; background:var(--card);
-    border:1px solid var(--line); border-radius:10px; padding:10px;
-    box-shadow:0 10px 30px rgba(0,0,0,.35); }
+  #evtmenu{ position:fixed; z-index:50; display:none; width:240px; background:var(--card);
+    border:1px solid var(--line); border-radius:10px; padding:12px; box-shadow:0 10px 30px rgba(0,0,0,.35); }
   #evtmenu .evtbtns{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
-  #evtmenu button{ font-size:12px; padding:6px 8px; width:100%; }
-  #evtmenu input{ flex:1; }
-  .warnbar{ background:var(--warnbg); border:1px solid var(--warnline); color:var(--warnink);
-            padding:8px 12px; border-radius:8px; margin-bottom:14px; font-size:13px; }
+  #evtmenu button{ height:30px; padding:0 8px; width:100%; font-size:12px; }
+  #evtmenu input[type=text]{ flex:1; width:auto; }
+  #log { font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--mut); white-space:pre-wrap;
+         max-height:140px; overflow:auto; margin-top:16px; border-top:1px solid var(--line); padding-top:10px; }
 </style>
 </head>
 <body>
@@ -84,15 +87,16 @@
     <button class="ghost" id="btnLive" title="snap chart to the last 12 h">⟳ 12 h</button>
     <button class="ghost" id="btnExport">Export CSV</button>
     <button class="ghost" id="btnClear">Clear data</button>
-    <span class="pill" id="stored">—</span>
+    <span class="sep"></span>
+    <span class="muted" id="stored" style="font-size:12px">—</span>
   </div>
 
   <div class="grid">
     <div>
       <div class="card" id="current">
         <div class="muted">current glucose</div>
-        <div><span class="big" id="g">—</span> <span class="unit" id="gu">mg/dL</span></div>
-        <div style="margin:10px 0 6px"><span id="trend" class="pill">trend —</span>
+        <div class="bigrow"><span class="big" id="g">—</span><span class="unit" id="gu">mg/dL</span></div>
+        <div class="pills"><span id="trend" class="pill">trend —</span>
           <span id="state" class="pill">—</span></div>
         <div class="row"><span>updated</span><b id="updated">—</b></div>
         <div class="row"><span>quality</span><b id="quality">—</b></div>
@@ -101,7 +105,7 @@
         <div class="row"><span>time in range (24 h)</span><b id="tir">—</b></div>
         <div class="row"><span>readings stored</span><b id="count">0</b></div>
       </div>
-      <div class="card" id="ranges" style="margin-top:16px"></div>
+      <div class="card" id="ranges"></div>
     </div>
     <div class="card"><div id="chart"></div></div>
   </div>
@@ -380,7 +384,7 @@ function render(){
     const pt=[t, +conv(mgdl).toFixed(2)];
     (recValid(mgdl,rs,i)?valid:warm).push(pt); });
   const band = MGDL()? [70,180] : [3.9,10.0];
-  const evData=(data.events||[]).map(ev=>({xAxis:ev.t, lbl:ev.label}));
+  const evData=(data.events||[]).map(ev=>({xAxis:ev.t, lbl: ev.icon || iconForLabel(ev.label)}));
   chart.setOption({                                  // merge: keeps the user's zoom/pan
     tooltip:{trigger:"axis", confine:true, formatter:tipFmt},
     yAxis:{name:MGDL()?"mg/dL":"mmol/L", min:v=>Math.min(band[0]-1,v.min), max:v=>Math.max(band[1]+1,v.max)},
@@ -388,7 +392,7 @@ function render(){
       {id:"g", data:valid,
        markArea:{silent:true, itemStyle:{color:"rgba(55,211,154,.10)"}, data:[[{yAxis:band[0]},{yAxis:band[1]}]]},
        markLine:{silent:true, symbol:"none", lineStyle:{type:"dashed", color:"#8b97a3", width:1},
-         label:{formatter:p=>p.data.lbl, position:"insideEndTop", fontSize:10, color:"#8b97a3"},
+         label:{formatter:p=>p.data.lbl, position:"insideEndTop", fontSize:15},
          data:evData}},
       {id:"w", data:warm},
     ],
@@ -431,6 +435,8 @@ function tirText(){
 }
 // ── event logging (double-click chart) ──────────────────────────────────────
 const FOODS=[["☕","coffee"],["🍎","snack"],["🍽️","meal"],["🥤","drink"],["🏃","exercise"],["💉","insulin"]];
+const ICONS=Object.fromEntries(FOODS.map(f=>[f[1],f[0]]));
+function iconForLabel(l){ return ICONS[l] || "📝"; }
 let evtPendingT=null;
 function showEvtMenu(cx, cy, t){
   evtPendingT=t;
@@ -438,20 +444,21 @@ function showEvtMenu(cx, cy, t){
     .filter(o=>Math.abs(o.e.t-t)<15*60000).sort((a,b)=>Math.abs(a.e.t-t)-Math.abs(b.e.t-t))[0];
   const d=new Date(t), hm=String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
   let html=`<div class="muted" style="margin-bottom:6px">log event at <b>${hm}</b></div><div class="evtbtns">`;
-  html+=FOODS.map(f=>`<button class="ghost evt" data-l="${f[1]}">${f[0]} ${f[1]}</button>`).join("");
+  html+=FOODS.map(f=>`<button class="ghost evt" data-l="${f[1]}" data-i="${f[0]}">${f[0]} ${f[1]}</button>`).join("");
   html+=`</div><div style="margin-top:6px;display:flex;gap:6px"><input id="evtcustom" type="text" placeholder="custom…" autocomplete="off">`
        +`<button class="ghost" id="evtadd">add</button></div>`;
   if(near) html+=`<div style="margin-top:6px"><button class="ghost" id="evtdel">✕ remove “${near.e.label}”</button></div>`;
   const m=el.evtmenu; m.innerHTML=html; m.style.display="block";
   const x=Math.min(cx, window.innerWidth-246), y=Math.min(cy+8, window.innerHeight-m.offsetHeight-8);
   m.style.left=Math.max(8,x)+"px"; m.style.top=Math.max(8,y)+"px";
-  m.querySelectorAll("button.evt").forEach(b=>b.onclick=()=>addEvent(b.dataset.l));
+  m.querySelectorAll("button.evt").forEach(b=>b.onclick=()=>addEvent(b.dataset.l, b.dataset.i));
   m.querySelector("#evtadd").onclick=()=>{ const v=m.querySelector("#evtcustom").value.trim(); if(v) addEvent(v); };
   m.querySelector("#evtcustom").addEventListener("keydown",e=>{ if(e.key==="Enter"){ const v=e.target.value.trim(); if(v) addEvent(v); } });
   if(near) m.querySelector("#evtdel").onclick=()=>{ data.events.splice(near.i,1); save(); hideEvtMenu(); render(); };
 }
-function addEvent(label){ if(evtPendingT==null) return; (data.events=data.events||[]).push({t:evtPendingT,label});
-  save(); hideEvtMenu(); render(); log(`logged "${label}"`); }
+function addEvent(label, icon){ if(evtPendingT==null) return;
+  (data.events=data.events||[]).push({t:evtPendingT, label, icon:icon||iconForLabel(label)});
+  save(); hideEvtMenu(); render(); log(`logged ${icon||iconForLabel(label)} ${label}`); }
 function hideEvtMenu(){ if(el.evtmenu) el.evtmenu.style.display="none"; }
 document.addEventListener("click", e=>{ if(el.evtmenu && el.evtmenu.style.display==="block"
   && !el.evtmenu.contains(e.target) && e.target!==el.chart && !el.chart.contains(e.target)) hideEvtMenu(); });

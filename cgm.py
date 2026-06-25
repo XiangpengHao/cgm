@@ -48,6 +48,7 @@ AIDEX_COMPANY_ID = 0x0059
 def char_uuid(short: str) -> str:
     return f"0000{short.lower()}-0000-1000-8000-00805f9b34fb"
 
+F001 = char_uuid("F001")   # pairing (write / notify) — used on an unpaired transmitter
 F002 = char_uuid("F002")   # DevComm2 data (read / write-without-response / notify)
 F003 = char_uuid("F003")   # reconnect notify
 
@@ -587,6 +588,42 @@ async def cmd_history(args) -> int:
     return await with_session(args, fn)
 
 
+async def cmd_pair(args) -> int:
+    """First-time pairing: write the SN-derived secret to F001; the device returns its 16-byte
+    pair key (only works on a fresh/unpaired transmitter)."""
+    if not args.serial:
+        print("set --serial <device serial>", file=sys.stderr)
+        return 2
+    secret = derive_pair_secret(args.serial)
+    dev, _ = await find_device(args.timeout, args.address, args.serial)
+    if dev is None:
+        print("device not found (try --address <macOS-UUID> or move closer)", file=sys.stderr)
+        return 2
+    holder, got = {}, asyncio.Event()
+    def on_f001(_c, payload):
+        b = bytes(payload)
+        if len(b) == 16 and "key" not in holder:
+            holder["key"] = b
+            got.set()
+    async with BleakClient(dev) as client:
+        await client.start_notify(F001, on_f001)
+        try:
+            await client.start_notify(F002, lambda *a: None)
+        except Exception:
+            pass
+        await asyncio.sleep(0.3)
+        await client.write_gatt_char(F001, secret, response=True)
+        try:
+            await asyncio.wait_for(got.wait(), timeout=8.0)
+        except asyncio.TimeoutError:
+            print("no pair key returned — this works only on a fresh/unpaired transmitter.", file=sys.stderr)
+            return 1
+        key = holder["key"].hex().upper()
+        print(f"AIDEX_PAIR_SUCCESS serial={args.serial} key={key}")
+        print("Save this 32-hex pair key (use as --key, env AIDEX_PAIR_KEY, or in the web app).")
+        return 0
+
+
 async def cmd_start_sensor(args) -> int:
     if not args.yes:
         print("Refusing: start-sensor is IRREVERSIBLE (commits the single-use sensor and\n"
@@ -647,6 +684,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("info", parents=[common], help="device info + sensor start time")
     s.set_defaults(func=cmd_info)
+
+    s = sub.add_parser("pair", parents=[common],
+                       help="first-time pairing: obtain the device-issued pair key (fresh transmitter)")
+    s.set_defaults(func=cmd_pair)
 
     s = sub.add_parser("history", parents=[common],
                        help="read stored on-device history (optionally a time range)")
