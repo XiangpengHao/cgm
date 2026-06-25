@@ -19,13 +19,15 @@ is documented in **[PROTOCOL.md](PROTOCOL.md)**.
 
 Everything is derived from the device **serial** (printed on it / in its BLE name), plus a 16-byte
 **pair key** the device hands out **once** during pairing (it is *not* derivable from the serial).
-Pair once to obtain it — e.g. on macOS:
+
+The **web app does this for you** — open **devices… → enter the SN → Pair**. It fetches the key over
+Bluetooth, shows and saves it, optionally starts the sensor, and connects. No scripts needed.
+(Pairing only works on a fresh / unpaired transmitter.) CLI alternative:
 
 ```sh
 python3 cgm.py pair --serial <SERIAL>
-# -> prints  AIDEX_PAIR_SUCCESS serial=<SERIAL> key=<32 hex chars>   — save this; it's your pair key
+# -> prints  AIDEX_PAIR_SUCCESS serial=<SERIAL> key=<32 hex chars>
 ```
-(Pairing only works on a fresh / unpaired transmitter.)
 
 Keep the pair key **private**: together with the (publicly-advertised) serial it grants full read
 access to your transmitter. Never commit it.
@@ -36,9 +38,10 @@ access to your transmitter. Never commit it.
 # locally:
 python3 -m http.server 8000        # then open Chrome at http://localhost:8000/
 ```
-Open it, click **devices…** to add a device (name + SN + pair key — multiple devices supported,
-switch with the dropdown; all saved in your browser's localStorage, never in the page source), then
-**Connect**. It handshakes, backfills only the missing history, charts it with zone shading, and
+Open it, click **devices…**, enter the SN and tap **Pair** (fetches the key over BLE, offers to
+start the sensor) — or paste a key you already have. Multiple devices are supported (switch with the
+dropdown; all saved in your browser's localStorage, never in the page source). Then **Connect**:
+it handshakes, backfills only the missing history, charts it with zone shading, and
 persists per device across refresh. Unit toggle (mg/dL ↔ mmol/L), light/dark theme, CSV /
 Apple-Health export, and double-click-to-log events (coffee/meal/etc.).
 **Chrome/Edge on desktop or Android only** — Safari/Firefox/iOS don't support Web Bluetooth.

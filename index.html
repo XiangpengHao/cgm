@@ -166,11 +166,15 @@
     <div style="display:flex;flex-direction:column;gap:8px">
       <input id="devname" type="text" placeholder="name (e.g. left arm)" autocomplete="off">
       <input id="devsn" type="text" placeholder="device SN" autocomplete="off">
-      <input id="devkey" type="text" placeholder="16-byte pair key (hex)" autocomplete="off">
-      <button id="devsave">add device</button>
+      <input id="devkey" type="text" placeholder="pair key (hex) — or use Pair to fetch it" autocomplete="off">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="devpair" class="ghost">Pair (get key)</button>
+        <button id="devsave">add device</button>
+      </div>
     </div>
-    <p class="muted" style="font-size:11px;margin:8px 0 0">No pair key yet? Get it with
-      <code>cgm.py pair --serial &lt;SN&gt;</code>. Everything is stored only in this browser.</p>
+    <p class="muted" style="font-size:11px;margin:8px 0 0">Enter the SN and tap <b>Pair</b> to fetch the
+      key over Bluetooth (fresh transmitter only) — it's shown and saved, then you can start the sensor.
+      Or paste a key you already have. Everything is stored only in this browser.</p>
   </div>
 </div></div>
 
@@ -209,6 +213,12 @@ function b36(ch){ const o=ch.charCodeAt(0);
   if(o>=48&&o<=57)return o-48; if(o>=65&&o<=90)return o-55; if(o>=97&&o<=122)return o-87;
   throw new Error("bad serial char "+ch); }
 const deriveIV = serial => md5(Uint8Array.from([...serial].map(c=>(b36(c)*17+19)&0xff)));
+const derivePairSecret = serial => md5(Uint8Array.from([...serial].map(c=>(b36(c)*13+61)&0xff)));
+// 9-byte newSensor datetime: year(u16 LE), month, day, hour, min, sec, tz(¼h signed), dst(¼h signed)
+function newSensorPayload(){ const d=new Date(), y=d.getFullYear();
+  const jan=new Date(y,0,1).getTimezoneOffset(), jul=new Date(y,6,1).getTimezoneOffset();
+  const stdOff=Math.max(jan,jul), tzQ=Math.round(-stdOff/15), dstQ=Math.round((stdOff-d.getTimezoneOffset())/15);
+  return new Uint8Array([y&0xff,(y>>8)&0xff,d.getMonth()+1,d.getDate(),d.getHours(),d.getMinutes(),d.getSeconds(),tzQ&0xff,dstQ&0xff]); }
 
 function sessionKey(challenge, pairKey, iv){
   if(challenge.length!==17) throw new Error("challenge !=17 bytes");
@@ -249,8 +259,8 @@ function decodeHistBlock(p){ if(p.length<3||p[0]!==1) return null;
   return {start, words}; }
 
 // ───────────────────────── BLE transport ────────────────────────────────────
-const S_181F=0x181f, C_F002=0xf002, C_F003=0xf003;
-let device=null, f002=null, sk=null, iv=null, pending=null;
+const S_181F=0x181f, C_F001=0xf001, C_F002=0xf002, C_F003=0xf003;
+let device=null, f002=null, sk=null, iv=null, pending=null, pendingActivate=false;
 
 function onNotify(ev){
   const data=new Uint8Array(ev.target.value.buffer);
@@ -258,9 +268,7 @@ function onNotify(ev){
   const msg=devDecode(data, sk, iv);
   if(msg && pending){ const r=pending; pending=null; r(msg); }
 }
-const ALLOWED_OPS=[0x10,0x11,0x21,0x22,0x23];  // read-only by design — never a state-changing opcode (no 0x20)
-async function command(op, payload=new Uint8Array(0), timeout=5000){
-  if(!ALLOWED_OPS.includes(op)) throw new Error("disallowed opcode 0x"+op.toString(16));
+async function rawCommand(op, payload=new Uint8Array(0), timeout=5000){
   const packet=devEncode(op, payload, sk, iv);
   const got=new Promise((res)=>{ pending=res; });
   if(f002.writeValueWithoutResponse) await f002.writeValueWithoutResponse(packet);
@@ -268,6 +276,13 @@ async function command(op, payload=new Uint8Array(0), timeout=5000){
   return Promise.race([got, new Promise(r=>setTimeout(()=>r(null),timeout))]).then(m=>{
     pending=null; return (m && m.op===op) ? m : null;   // ignore unmatched / stray frames
   });
+}
+// reads go through command() (allowlisted); the only state-changing write (0x20) is rawCommand,
+// reachable solely from the confirmation-gated activate flow below.
+const ALLOWED_OPS=[0x10,0x11,0x21,0x22,0x23];
+async function command(op, payload, timeout){
+  if(!ALLOWED_OPS.includes(op)) throw new Error("disallowed opcode 0x"+op.toString(16));
+  return rawCommand(op, payload, timeout);
 }
 async function connect(){
   if(!navigator.bluetooth){ log("Web Bluetooth unavailable — use Chrome/Edge over https or localhost."); return; }
@@ -294,7 +309,55 @@ async function connect(){
   log("handshake ok — session established");
   setStatus("connected: "+(device.name||device.id),"on");
   el.btnSync.disabled=false; el.btnDisc.disabled=false; el.btnConnect.disabled=true;
+  if(pendingActivate){ pendingActivate=false; await tryActivate(); }
   await sync();   // sync() starts the live poll in its finally when connected
+}
+// Gated activation: only after explicit confirmation, and only on a fresh NEW/USED sensor.
+async function tryActivate(){
+  try{
+    const br=await command(0x11);
+    const bc=br && br.payload[0]===1 ? decodeBroadcast(br.payload.slice(1)) : null;
+    const st=bc ? stateName(bc) : "unknown";
+    if(bc && st!=="NEW/USED"){ log("not starting: sensor is "+st+" — only a fresh NEW/USED sensor can be started."); return; }
+    const ack=await rawCommand(0x20, newSensorPayload());
+    log(ack && ack.payload[0]===1 ? "✓ new sensor started — ~60-min warmup begins" : "newSensor sent (ack "+(ack?toHex(ack.payload):"none")+")");
+  }catch(e){ log("activate error: "+e.message); }
+}
+// First-time pairing over BLE (fresh transmitter): write SN-derived secret to F001, read 16-byte key.
+async function blePair(serial){
+  const secret=derivePairSecret(serial);
+  const dev=await navigator.bluetooth.requestDevice({filters:[{services:[S_181F]}], optionalServices:[S_181F]});
+  const server=await dev.gatt.connect();
+  try{
+    const svc=await server.getPrimaryService(S_181F);
+    const f001=await svc.getCharacteristic(C_F001);
+    let resolveKey; const keyP=new Promise(r=>resolveKey=r);
+    await f001.startNotifications();
+    f001.addEventListener("characteristicvaluechanged", ev=>{ const b=new Uint8Array(ev.target.value.buffer); if(b.length===16) resolveKey(b); });
+    try{ const f=await svc.getCharacteristic(C_F002); await f.startNotifications(); }catch(e){}
+    await new Promise(r=>setTimeout(r,300));
+    if(f001.writeValueWithResponse) await f001.writeValueWithResponse(secret); else await f001.writeValue(secret);
+    const key=await Promise.race([keyP, new Promise((_,rej)=>setTimeout(()=>rej(new Error("no key returned — pairing only works on a fresh / unpaired transmitter")),8000))]);
+    return toHex(key).toUpperCase();
+  } finally { try{ server.disconnect(); }catch(e){} }
+}
+async function pairFlow(){
+  if(!navigator.bluetooth){ alert("Web Bluetooth needs Chrome/Edge over https or localhost."); return; }
+  const serial=el.devsn.value.trim();
+  if(!serial){ alert("Enter the device SN first."); return; }
+  el.devpair.disabled=true; el.devpair.textContent="pairing…";
+  try{
+    const key=await blePair(serial);
+    el.devkey.value=key;
+    saveDeviceForm();                                   // persist name/SN/key
+    const d=devices.list.find(x=>x.serial===serial); if(d) setActiveDevice(d.id);
+    log("paired ✓ key="+key);
+    alert("Paired ✓\n\nPair key (saved in this browser):\n"+key);
+    if(confirm("Start a NEW sensor session now?\n\nIRREVERSIBLE — this begins the sensor's 15-day life and a ~60-minute warmup. Only do this with a fresh sensor applied to the body.")){
+      pendingActivate=true; el.devwrap.classList.remove("open"); await connect();
+    }
+  }catch(e){ log("pair failed: "+e.message); alert("Pairing failed: "+e.message); }
+  finally { el.devpair.disabled=false; el.devpair.textContent="Pair (get key)"; }
 }
 function onDisconnect(){ sk=null; f002=null; stopLivePoll();
   setStatus("disconnected","off"); el.btnSync.disabled=true; el.btnDisc.disabled=true;
@@ -443,7 +506,7 @@ const el = id => document.getElementById(id);
 ["btnConnect","btnSync","btnDisc","btnUnit","btnTheme","btnLive","btnExport","btnHealth","btnClear","deviceSel","btnDevices",
  "dot","status","g","gu","trend","state","updated","quality","age","valid","count","stored","chart","log","ranges","tir","evtmenu",
  "healthwrap","healthclose","healthdl","healthdlinfo",
- "devwrap","devclose","devlist","devname","devsn","devkey","devsave"]
+ "devwrap","devclose","devlist","devname","devsn","devkey","devsave","devpair"]
  .forEach(id=>el[id]=document.getElementById(id));
 function setStatus(t,cls){ el.status.textContent=t; el.dot.className="dot "+(cls||""); }
 function log(m){ el.log.textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + el.log.textContent; }
@@ -652,6 +715,7 @@ el.btnDevices.onclick=openDevModal;
 el.devclose.onclick=()=>el.devwrap.classList.remove("open");
 el.devwrap.onclick=e=>{ if(e.target===el.devwrap) el.devwrap.classList.remove("open"); };
 el.devsave.onclick=saveDeviceForm;
+el.devpair.onclick=pairFlow;
 
 document.documentElement.dataset.theme = settings.theme;   // apply saved theme (survives refresh)
 el.btnTheme.textContent = "theme: " + settings.theme;
