@@ -40,9 +40,9 @@ python3 -m http.server 8000        # then open Chrome at http://localhost:8000/
 Open it, type your **serial** and **pair key** into the fields (saved in your browser's
 localStorage, never in the page source), and click **Connect**. It handshakes, backfills only the
 missing history, charts it with a target-range band, and persists across refresh. Unit toggle
-(mg/dL ↔ mmol/L), light/dark theme, and CSV export. **Chrome/Edge on desktop or Android only** —
-Safari/Firefox/iOS don't support Web Bluetooth. Libraries (crypto-js, echarts) are vendored under
-`vendor/`, so it runs fully offline with no CDN.
+(mg/dL ↔ mmol/L), light/dark theme, CSV export, and double-click-to-log events (coffee/meal/etc.).
+**Chrome/Edge on desktop or Android only** — Safari/Firefox/iOS don't support Web Bluetooth.
+Libraries (crypto-js, echarts) load from the jsDelivr CDN, pinned with Subresource Integrity hashes.
 
 ### Deploy to GitHub Pages
 

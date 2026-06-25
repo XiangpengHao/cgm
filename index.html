@@ -5,10 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AiDEX X / GX-01S — Web Bluetooth reader</title>
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
-<!-- vendored locally (self-contained, no CDN / supply-chain): crypto-js (AES block + MD5), echarts (chart) -->
-<script src="vendor/crypto-js.min.js"></script>
-<script src="vendor/echarts.min.js"></script>
+      content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<!-- jsDelivr CDN, pinned with Subresource Integrity (SRI): crypto-js (AES block + MD5), echarts (chart) -->
+<script src="https://cdn.jsdelivr.net/npm/crypto-js@4.2.0/crypto-js.min.js"
+        integrity="sha384-wMl+kXogESASLchg2kqaUiGjNIMsZDb+Mpsqc1rCWd1qlG+lgD3E4HAPSAq5tvzC"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"
+        integrity="sha384-Mx5lkUEQPM1pOJCwFtUICyX45KNojXbkWdYhkKUKsbv391mavbfoAmONbzkgYPzR"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <style>
   :root, [data-theme="dark"] {
     --bg:#0f1216; --card:#171c22; --ink:#e6edf3; --mut:#8b97a3; --acc:#4ea1ff; --accink:#04101f;
@@ -51,6 +55,12 @@
   table.dx{ border-collapse:collapse; width:100%; font-size:11px; }
   table.dx th, table.dx td{ border:1px solid var(--line); padding:3px 6px; text-align:center; }
   table.dx th{ font-weight:600; }
+  #evtmenu{ position:fixed; z-index:50; display:none; width:236px; background:var(--card);
+    border:1px solid var(--line); border-radius:10px; padding:10px;
+    box-shadow:0 10px 30px rgba(0,0,0,.35); }
+  #evtmenu .evtbtns{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  #evtmenu button{ font-size:12px; padding:6px 8px; width:100%; }
+  #evtmenu input{ flex:1; }
   .warnbar{ background:var(--warnbg); border:1px solid var(--warnline); color:var(--warnink);
             padding:8px 12px; border-radius:8px; margin-bottom:14px; font-size:13px; }
 </style>
@@ -71,6 +81,7 @@
     <label class="k">pair&nbsp;key</label><input id="pairkey" type="text" placeholder="16-byte pair key (hex)" autocomplete="off">
     <button class="ghost" id="btnUnit">unit: mg/dL</button>
     <button class="ghost" id="btnTheme">theme: dark</button>
+    <button class="ghost" id="btnLive" title="snap chart to the last 12 h">⟳ 12 h</button>
     <button class="ghost" id="btnExport">Export CSV</button>
     <button class="ghost" id="btnClear">Clear data</button>
     <span class="pill" id="stored">—</span>
@@ -87,6 +98,7 @@
         <div class="row"><span>quality</span><b id="quality">—</b></div>
         <div class="row"><span>sensor age</span><b id="age">—</b></div>
         <div class="row"><span>validity</span><b id="valid">—</b></div>
+        <div class="row"><span>time in range (24 h)</span><b id="tir">—</b></div>
         <div class="row"><span>readings stored</span><b id="count">0</b></div>
       </div>
       <div class="card" id="ranges" style="margin-top:16px"></div>
@@ -95,6 +107,7 @@
   </div>
   <div id="log"></div>
 </main>
+<div id="evtmenu"></div>
 
 <script>
 "use strict";
@@ -289,6 +302,7 @@ if(!settings.theme) settings.theme="dark";
 if(settings.unit!=="mgdl"&&settings.unit!=="mmol") settings.unit="mgdl";
 let data = loadJSON("cgm.data");
 if(!data || typeof data!=="object" || typeof data.records!=="object") data={sensorStartIso:null, records:{}};
+if(!Array.isArray(data.events)) data.events=[];   // {t:ms, label} meal/activity markers
 let live = {trend:null,state:null,timeOffset:null,quality:null,status:null};
 function save(){ try { localStorage.setItem("cgm.data", JSON.stringify(data));
     localStorage.setItem("cgm.settings", JSON.stringify(settings)); }
@@ -296,8 +310,8 @@ function save(){ try { localStorage.setItem("cgm.data", JSON.stringify(data));
 
 // ───────────────────────── UI / chart ───────────────────────────────────────
 const el = id => document.getElementById(id);
-["btnConnect","btnSync","btnDisc","btnUnit","btnTheme","btnExport","btnClear","serial","pairkey",
- "dot","status","g","gu","trend","state","updated","quality","age","valid","count","stored","chart","log","ranges"]
+["btnConnect","btnSync","btnDisc","btnUnit","btnTheme","btnLive","btnExport","btnClear","serial","pairkey",
+ "dot","status","g","gu","trend","state","updated","quality","age","valid","count","stored","chart","log","ranges","tir","evtmenu"]
  .forEach(id=>el[id]=document.getElementById(id));
 function setStatus(t,cls){ el.status.textContent=t; el.dot.className="dot "+(cls||""); }
 function log(m){ el.log.textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + el.log.textContent; }
@@ -323,17 +337,40 @@ function renderRanges(){ const mg=MGDL(), U=mg?"mg/dL":"mmol/L";
   const body=dx.map(r=>`<tr><td style="text-align:left">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("");
   el.ranges.innerHTML =
      `<div class="muted" style="margin-bottom:8px">reference · diagnostic (${U})</div>`
-    +`<table class="dx">${head}${body}</table>`
-    +`<div class="muted" style="margin-top:8px;font-size:11px">CGM in-range target <b>${mg?"70–180":"3.9–10.0"}</b>. `
-    +`Diagnostic cut-offs (Mayo Clinic) — fasting / glucose-tolerance blood tests, not CGM readings.</div>`; }
+    +`<table class="dx">${head}${body}</table>`; }
 
-let chart=null;
+let chart=null, windowInit=false;
+const HOUR=3600000, DEFAULT_SPAN=12*HOUR;
 window.addEventListener("resize",()=>chart&&chart.resize());
-function ensureChart(){ if(!chart) chart=echarts.init(el.chart, settings.theme==="light"?null:"dark",
-                                                       {renderer:"canvas"}); }
+function latestTime(){ const idxs=Object.keys(data.records).map(Number);
+  return (idxs.length && data.sensorStartIso) ? recTime(Math.max(...idxs)).getTime() : Date.now(); }
+function liveView(){ if(!chart) return; const e=latestTime();
+  chart.dispatchAction({type:"dataZoom", startValue:e-DEFAULT_SPAN, endValue:e}); }
+function ensureChart(){
+  if(chart) return;
+  chart=echarts.init(el.chart, settings.theme==="light"?null:"dark", {renderer:"canvas"});
+  chart.setOption({                                  // static base; merged updates preserve zoom/pan
+    backgroundColor:"transparent",
+    grid:{left:46,right:14,top:16,bottom:48},
+    xAxis:{type:"time", axisLabel:{formatter:"{HH}:{mm}", hideOverlap:true},
+           splitLine:{show:true}, splitNumber:12},   // hour-ish vertical gridlines, HH:MM labels
+    yAxis:{type:"value"},
+    dataZoom:[{type:"inside", zoomOnMouseWheel:true, moveOnMouseMove:true, moveOnMouseWheel:false},
+              {type:"slider", height:16, bottom:14}],
+    series:[{id:"g", type:"line", showSymbol:false, smooth:true, lineStyle:{width:2,color:"#4ea1ff"}},
+            {id:"w", type:"scatter", symbolSize:4, itemStyle:{color:"rgba(240,169,43,.55)"}}],
+  }, true);
+  chart.getZr().on("dblclick", ev=>{                 // double-click empty chart -> log an event
+    const t=chart.convertFromPixel({xAxisIndex:0}, ev.offsetX);
+    if(t!=null && isFinite(t)) showEvtMenu(ev.event.clientX, ev.event.clientY, Math.round(t));
+  });
+}
 function setTheme(t){ settings.theme=t; save(); document.documentElement.dataset.theme=t;
   el.btnTheme.textContent="theme: "+t;
-  if(chart){ chart.dispose(); chart=null; } ensureChart(); render(); }
+  if(chart){ chart.dispose(); chart=null; } windowInit=false; ensureChart(); render(); }
+function tipFmt(params){ const p=(params||[]).find(x=>x.value&&x.value.length===2); if(!p) return "";
+  const d=new Date(p.value[0]); const hm=String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+  return `${hm} &nbsp; <b>${p.value[1]}</b> ${MGDL()?"mg/dL":"mmol/L"}`; }
 function render(){
   ensureChart();
   renderRanges();
@@ -343,29 +380,26 @@ function render(){
     const pt=[t, +conv(mgdl).toFixed(2)];
     (recValid(mgdl,rs,i)?valid:warm).push(pt); });
   const band = MGDL()? [70,180] : [3.9,10.0];
-  chart.setOption({
-    backgroundColor:"transparent",
-    grid:{left:48,right:16,top:24,bottom:48},
-    tooltip:{trigger:"axis",valueFormatter:v=>v+(MGDL()?" mg/dL":" mmol/L")},
-    xAxis:{type:"time"},
-    yAxis:{type:"value",name:MGDL()?"mg/dL":"mmol/L",
-           min:v=>Math.min(band[0]-1,v.min), max:v=>Math.max(band[1]+1,v.max)},
-    dataZoom:[{type:"inside"},{type:"slider",height:16,bottom:18}],
+  const evData=(data.events||[]).map(ev=>({xAxis:ev.t, lbl:ev.label}));
+  chart.setOption({                                  // merge: keeps the user's zoom/pan
+    tooltip:{trigger:"axis", confine:true, formatter:tipFmt},
+    yAxis:{name:MGDL()?"mg/dL":"mmol/L", min:v=>Math.min(band[0]-1,v.min), max:v=>Math.max(band[1]+1,v.max)},
     series:[
-      {name:"glucose",type:"line",showSymbol:false,smooth:true,data:valid,
-       lineStyle:{width:2,color:"#4ea1ff"},
-       markArea:{silent:true,itemStyle:{color:"rgba(55,211,154,.10)"},
-                 data:[[{yAxis:band[0]},{yAxis:band[1]}]]}},
-      {name:"warmup/invalid",type:"scatter",symbolSize:4,data:warm,
-       itemStyle:{color:"rgba(240,169,43,.5)"}},
+      {id:"g", data:valid,
+       markArea:{silent:true, itemStyle:{color:"rgba(55,211,154,.10)"}, data:[[{yAxis:band[0]},{yAxis:band[1]}]]},
+       markLine:{silent:true, symbol:"none", lineStyle:{type:"dashed", color:"#8b97a3", width:1},
+         label:{formatter:p=>p.data.lbl, position:"insideEndTop", fontSize:10, color:"#8b97a3"},
+         data:evData}},
+      {id:"w", data:warm},
     ],
-  }, true);
-  // current = highest index
+  });
+  if(!windowInit && idxs.length){ liveView(); windowInit=true; }   // default to last 12 h once
+
   const last = idxs.length? idxs[idxs.length-1] : null;
   if(last!=null){
     const [mgdl,rs]=data.records[last];
     el.g.textContent=fmt(mgdl); el.gu.textContent=MGDL()?"mg/dL":"mmol/L";
-    el.updated.textContent = data.sensorStartIso? recTime(last).toLocaleTimeString() : "—";
+    el.updated.textContent = data.sensorStartIso? recTime(last).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "—";
     el.quality.textContent = live.quality!=null? live.quality : "—";
     el.age.textContent = (live.timeOffset!=null?live.timeOffset:last)+" min";
     const v=currentValid(mgdl,rs,last);
@@ -376,11 +410,52 @@ function render(){
     if(live.trend!=null){ const a=trendArrow(live.trend);
       el.trend.textContent=`trend ${live.trend>=0?"+":""}${live.trend} mg/dL/min ${a}`; }
   }
+  el.tir.innerHTML = tirText();
   el.count.textContent=idxs.length;
   el.stored.textContent = data.sensorStartIso
     ? `session ${new Date(data.sensorStartIso).toLocaleString()} · ${idxs.length} pts` : "no data";
   el.btnUnit.textContent="unit: "+(MGDL()?"mg/dL":"mmol/L");
 }
+// time-in-range over the last 24 h of VALID readings (the key CGM metric)
+function tirText(){
+  const idxs=Object.keys(data.records).map(Number);
+  if(!idxs.length || !data.sensorStartIso) return "—";
+  const cutoff=Math.max(...idxs)-24*60;              // index == sensor-minute
+  let inR=0,lo=0,hi=0,tot=0;
+  idxs.forEach(i=>{ if(i<cutoff) return; const [mgdl,rs]=data.records[i];
+    if(!recValid(mgdl,rs,i)) return; tot++;
+    if(mgdl<70) lo++; else if(mgdl>180) hi++; else inR++; });
+  if(!tot) return "—";
+  const pct=x=>Math.round(x/tot*100);
+  return `<span class="ok">${pct(inR)}% in</span> · <span class="warn">${pct(lo)}% lo</span> · <span class="warn">${pct(hi)}% hi</span>`;
+}
+// ── event logging (double-click chart) ──────────────────────────────────────
+const FOODS=[["☕","coffee"],["🍎","snack"],["🍽️","meal"],["🥤","drink"],["🏃","exercise"],["💉","insulin"]];
+let evtPendingT=null;
+function showEvtMenu(cx, cy, t){
+  evtPendingT=t;
+  const near=(data.events||[]).map((e,i)=>({e,i}))
+    .filter(o=>Math.abs(o.e.t-t)<15*60000).sort((a,b)=>Math.abs(a.e.t-t)-Math.abs(b.e.t-t))[0];
+  const d=new Date(t), hm=String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+  let html=`<div class="muted" style="margin-bottom:6px">log event at <b>${hm}</b></div><div class="evtbtns">`;
+  html+=FOODS.map(f=>`<button class="ghost evt" data-l="${f[1]}">${f[0]} ${f[1]}</button>`).join("");
+  html+=`</div><div style="margin-top:6px;display:flex;gap:6px"><input id="evtcustom" type="text" placeholder="custom…" autocomplete="off">`
+       +`<button class="ghost" id="evtadd">add</button></div>`;
+  if(near) html+=`<div style="margin-top:6px"><button class="ghost" id="evtdel">✕ remove “${near.e.label}”</button></div>`;
+  const m=el.evtmenu; m.innerHTML=html; m.style.display="block";
+  const x=Math.min(cx, window.innerWidth-246), y=Math.min(cy+8, window.innerHeight-m.offsetHeight-8);
+  m.style.left=Math.max(8,x)+"px"; m.style.top=Math.max(8,y)+"px";
+  m.querySelectorAll("button.evt").forEach(b=>b.onclick=()=>addEvent(b.dataset.l));
+  m.querySelector("#evtadd").onclick=()=>{ const v=m.querySelector("#evtcustom").value.trim(); if(v) addEvent(v); };
+  m.querySelector("#evtcustom").addEventListener("keydown",e=>{ if(e.key==="Enter"){ const v=e.target.value.trim(); if(v) addEvent(v); } });
+  if(near) m.querySelector("#evtdel").onclick=()=>{ data.events.splice(near.i,1); save(); hideEvtMenu(); render(); };
+}
+function addEvent(label){ if(evtPendingT==null) return; (data.events=data.events||[]).push({t:evtPendingT,label});
+  save(); hideEvtMenu(); render(); log(`logged "${label}"`); }
+function hideEvtMenu(){ if(el.evtmenu) el.evtmenu.style.display="none"; }
+document.addEventListener("click", e=>{ if(el.evtmenu && el.evtmenu.style.display==="block"
+  && !el.evtmenu.contains(e.target) && e.target!==el.chart && !el.chart.contains(e.target)) hideEvtMenu(); });
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") hideEvtMenu(); });
 function stateLabel(idx){ return idx>=60?"ACTIVE":"WARMING-UP"; }
 function trendArrow(t){ if(t<-30)return"↓↓"; if(t<-20)return"↓"; if(t<-10)return"↘";
   if(t<11)return"→"; if(t<21)return"↗"; if(t<31)return"↑"; return"↑↑"; }
@@ -404,8 +479,9 @@ el.btnDisc.onclick=disconnect;
 el.btnUnit.onclick=()=>{ settings.unit=MGDL()?"mmol":"mgdl"; save(); render(); };
 el.btnTheme.onclick=()=>setTheme(settings.theme==="light"?"dark":"light");
 el.btnExport.onclick=exportCsv;
-el.btnClear.onclick=()=>{ if(confirm("Clear all stored readings?")){ data={sensorStartIso:null,records:{}};
+el.btnClear.onclick=()=>{ if(confirm("Clear all stored readings and events?")){ data={sensorStartIso:null,records:{},events:[]};
   save(); render(); log("data cleared"); } };
+el.btnLive.onclick=liveView;
 el.serial.value=settings.serial; el.pairkey.value=settings.pairkey;
 el.serial.onchange=()=>{ settings.serial=el.serial.value.trim(); save(); };
 el.pairkey.onchange=()=>{ settings.pairkey=el.pairkey.value.trim().replace(/\s/g,""); save(); };
