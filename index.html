@@ -327,8 +327,8 @@ function recValid(mgdl, rs, idx){ return rs===0 && mgdl>0 && mgdl<0x3ff && idx>=
 function currentValid(mgdl, rs, idx){ return recValid(mgdl,rs,idx) && (live.status==null || (live.status&0x3F)===0); }
 function recTime(idx){ return new Date(new Date(data.sensorStartIso).getTime()+idx*60000); }
 // glucose zone for coloring the current value (mg/dL thresholds)
-function zoneColor(mgdl){ if(mgdl<54||mgdl>250) return "var(--bad)";
-  if(mgdl<70||mgdl>180) return "var(--warn)"; return "var(--ok)"; }
+// value color, matching the chart zones: <5.6 mmol (100 mg/dL) green, 5.6–7.8 amber, >7.8 red
+function zoneColor(mgdl){ if(mgdl<=100) return "var(--ok)"; if(mgdl<=140) return "var(--warn)"; return "var(--bad)"; }
 function renderRanges(){ const mg=MGDL(), U=mg?"mg/dL":"mmol/L";
   const dx = mg
     ? [["fasting","&lt; 100","100–125","≥ 126"],
@@ -383,16 +383,21 @@ function render(){
   idxs.forEach(i=>{ const [mgdl,rs]=data.records[i]; const t=data.sensorStartIso?recTime(i).getTime():i;
     const pt=[t, +conv(mgdl).toFixed(2)];
     (recValid(mgdl,rs,i)?valid:warm).push(pt); });
-  const band = MGDL()? [70,180] : [3.9,10.0];
-  const evData=(data.events||[]).map(ev=>({xAxis:ev.t, lbl: ev.icon || iconForLabel(ev.label)}));
+  // background zones: green < Z0, amber Z0..Z1, red > Z1  (5.6 / 7.8 mmol = 100 / 140 mg/dL)
+  const Z = MGDL()? [100,140,600] : [5.6,7.8,33];
+  const evData=(data.events||[]).map(ev=>({xAxis:ev.t, lbl:(ev.icon||iconForLabel(ev.label))+" "+ev.label}));
   chart.setOption({                                  // merge: keeps the user's zoom/pan
     tooltip:{trigger:"axis", confine:true, formatter:tipFmt},
-    yAxis:{name:MGDL()?"mg/dL":"mmol/L", min:v=>Math.min(band[0]-1,v.min), max:v=>Math.max(band[1]+1,v.max)},
+    yAxis:{name:MGDL()?"mg/dL":"mmol/L", scale:true},
     series:[
       {id:"g", data:valid,
-       markArea:{silent:true, itemStyle:{color:"rgba(55,211,154,.10)"}, data:[[{yAxis:band[0]},{yAxis:band[1]}]]},
+       markArea:{silent:true, data:[                 // desaturated tints — kept low-alpha so the line stays the focus
+         [{yAxis:0,    itemStyle:{color:"rgba(55,211,154,0.08)"}}, {yAxis:Z[0]}],
+         [{yAxis:Z[0], itemStyle:{color:"rgba(240,169,43,0.08)"}}, {yAxis:Z[1]}],
+         [{yAxis:Z[1], itemStyle:{color:"rgba(255,93,93,0.08)"}},  {yAxis:Z[2]}],
+       ]},
        markLine:{silent:true, symbol:"none", lineStyle:{type:"dashed", color:"#8b97a3", width:1},
-         label:{formatter:p=>p.data.lbl, position:"insideEndTop", fontSize:15},
+         label:{formatter:p=>p.data.lbl, position:"insideEndTop", fontSize:11, color:"#8b97a3"},
          data:evData}},
       {id:"w", data:warm},
     ],
