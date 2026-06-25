@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/* Scan both this crate and the shared UI crate for class names. */
+@source "./src/**/*.rs";
+@source "../cgm-ui/src/**/*.rs";
+
+/* Class-based dark mode: the root <div> gets `.dark` from the theme setting. */
+@custom-variant dark (&:where(.dark, .dark *));

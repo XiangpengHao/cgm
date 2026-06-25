@@ -1,6 +1,6 @@
-name: Deploy web tool to GitHub Pages
+name: Deploy web app to GitHub Pages
 
-# Publishes index.html (the Web Bluetooth reader) to GitHub Pages.
+# Builds the Dioxus web app (crates/cgm-web) to WASM and publishes it.
 # One-time setup: repo Settings -> Pages -> Build and deployment -> Source = "GitHub Actions".
 
 on:
@@ -18,20 +18,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The flake pins the exact dioxus-cli / wasm-bindgen / tailwind / rust
+      # toolchain, so the CI build matches local dev.
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # Validate the portable crates before publishing.
+      - name: Test (core + UI)
+        run: nix develop --command cargo test
+
+      - name: Build Tailwind CSS
+        run: nix develop --command tailwindcss -i crates/cgm-web/tailwind.css -o crates/cgm-web/assets/tailwind.css
+
+      # `--debug-symbols false` drops the wasm DWARF (which makes binaryen's
+      # wasm-opt abort) and roughly halves the wasm. base_path=cgm comes from
+      # crates/cgm-web/Dioxus.toml (project Pages site /<repo>/).
+      - name: Build web app (release, WASM)
+        run: |
+          rm -rf target/dx/cgm-web   # avoid stale hashed assets if target/ is ever cached
+          nix develop --command dx build --release --package cgm-web --debug-symbols false
+
+      - name: Stage site
+        run: |
+          rm -rf _site && mkdir -p _site
+          cp -r target/dx/cgm-web/release/web/public/. _site/
+          # SPA + 404 fallback so deep links resolve under GitHub Pages.
+          cp _site/index.html _site/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Assemble static site (web app only)
-        run: |
-          mkdir -p _site
-          cp index.html _site/index.html
-          cp aidex-to-health.shortcut _site/
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4

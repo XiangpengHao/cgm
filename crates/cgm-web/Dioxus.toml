@@ -1,0 +1,14 @@
+[application]
+
+[web.app]
+title = "Glucose — AiDEX X / GX-01S"
+# Served from a GitHub Pages project site (https://<user>.github.io/cgm/).
+# Change to "" for a user/org page or a custom domain at the root.
+base_path = "cgm"
+
+[web.resource]
+style = []
+script = []
+
+[web.resource.dev]
+script = []

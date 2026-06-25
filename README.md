@@ -1,104 +1,94 @@
-# AiDEX X / GX-01S — open BLE reader
+# AiDEX X / GX-01S — open glucose reader
 
-Reverse-engineered, interoperable tools to read a **MicroTech AiDEX X (model GX-01S)** continuous
-glucose monitor over Bluetooth Low Energy — a browser app and a Python CLI. The full wire protocol
-is documented in **[PROTOCOL.md](PROTOCOL.md)**.
+Reverse-engineered, interoperable apps to read a **MicroTech AiDEX X (model GX-01S)** continuous
+glucose monitor over Bluetooth Low Energy. Built in **Rust + [Dioxus](https://dioxuslabs.com/)**: a
+shared, tested core drives both a **web app** (pure-WASM, runs in your browser) and a native **iOS
+app** (reads the sensor directly and writes to Apple Health). The full wire protocol is documented
+in **[PROTOCOL.md](PROTOCOL.md)**.
 
-> Not affiliated with MicroTech. This is experimental, uncalibrated, reverse-engineered software —
+> Not affiliated with MicroTech. Experimental, uncalibrated, reverse-engineered software —
 > **not a medical device and not for treatment decisions.** Confirm anything that matters with a
 > fingerstick meter and your clinician.
 
-## What's here
+## Design
 
-| Tool | Platform | Use |
-|---|---|---|
-| **`index.html`** | Chrome/Edge (desktop, Android) — Web Bluetooth | click-to-connect web app: live reading, history sync, chart, localStorage. **Read-only.** |
-| **`cgm.py`** | any (Python + `bleak`) | CLI: `pair` / `scan` / `read` / `monitor` / `history` / `info` / `start-sensor` |
+One pure-Rust core, one shared UI, two thin platform backends — each backend implements only the
+device/browser specifics (a BLE byte pipe, key/value storage, a clock, file/health export):
+
+```
+crates/
+├── cgm-core   pure domain logic — crypto, DevComm2 protocol, glucose decoding,
+│              the data model + persistence format, stats, and the BLE engine.
+│              No platform dependencies. 36 unit tests (protocol vectors, store
+│              back-compat, backfill against a mock device).
+├── cgm-ui     shared Dioxus components + reactive state. Talks to the device,
+│              storage, and health only through `Platform` traits, so the exact
+│              same UI renders on web and iOS. Tailwind styling, light/dark.
+├── cgm-web    WASM build: Web Bluetooth, localStorage, browser download/import.
+└── cgm-ios    iOS app: CoreBluetooth, HealthKit, file storage (macOS-only build).
+```
+
+**Backwards compatible:** the model, the `cgm.settings` / `cgm.devices` / `cgm.data.<id>`
+localStorage keys, the legacy single-device migration, and the Export/Import JSON backup are
+byte-for-byte the same as the previous web app — your existing data and backups load unchanged.
+
+## What you can do
+
+- **Add a sensor** with a guided wizard: name → **pair** over BLE (one-time, gets a private key) →
+  optionally **start** the sensor → **connect**.
+- **Live reading** with trend, a plain-language status ("In range" / "Below range" …), and a
+  glucose chart with the target band, event markers, and a selectable window (3h / 6h / 12h / 24h /
+  All).
+- **Log events** — double-click the chart to drop a coffee / meal / insulin / custom marker.
+- **Time-in-range** (24 h) at a glance.
+- **Multiple sensors**, unit toggle (mg/dL ↔ mmol/L), light/dark theme.
+- **Export / Import** a full JSON backup (all sensors + data + settings) to move between
+  browsers/devices.
+- **Apple Health** — the iOS app writes Blood Glucose directly; the web app exports a JSON the
+  built-in Shortcuts app can log.
+- An **Advanced & diagnostics** panel (collapsed by default) with sensor age vs the 15-day life,
+  validity, signal quality, reference ranges, and a raw log — there for experts, out of the way for
+  everyone else.
+
+## Develop
+
+Everything is pinned by the Nix flake (`dioxus-cli`, `wasm-bindgen`, `tailwindcss`, Rust nightly +
+the wasm target). With [direnv](https://direnv.net/) the shell loads automatically; otherwise:
+
+```sh
+nix develop            # enter the dev shell
+
+# core + shared UI (portable, run on any host)
+cargo test             # 38 tests
+cargo clippy
+
+# web app
+tailwindcss -i crates/cgm-web/tailwind.css -o crates/cgm-web/assets/tailwind.css
+dx serve --package cgm-web        # dev server with hot reload
+dx build --release --package cgm-web   # production bundle -> target/dx/cgm-web/release/web/public
+```
+
+Open the dev server in **Chrome or Edge** (desktop or Android) — Web Bluetooth isn't available in
+Safari/Firefox/iOS, which is exactly why the iOS app exists.
+
+The **iOS app** builds only on macOS with the Apple SDK — see
+**[crates/cgm-ios/README.md](crates/cgm-ios/README.md)** (`dx serve --platform ios`, HealthKit
+capability, Bluetooth/Health usage strings).
+
+### Deploy to GitHub Pages
+
+Push to `main` and set **Settings → Pages → Source = GitHub Actions**. The workflow
+(`.github/workflows/deploy.yml`) builds the WASM bundle in the flake's pinned toolchain and
+publishes it. The page ships **no secrets** — each user pairs their own transmitter, and the
+serial/pair-key live only in their browser's localStorage.
 
 ## Getting your device's pair key (one-time)
 
 Everything is derived from the device **serial** (printed on it / in its BLE name), plus a 16-byte
 **pair key** the device hands out **once** during pairing (it is *not* derivable from the serial).
-
-The **web app does this for you** — open **devices… → enter the SN → Pair**. It fetches the key over
-Bluetooth, shows and saves it, optionally starts the sensor, and connects. No scripts needed.
-(Pairing only works on a fresh / unpaired transmitter.) CLI alternative:
-
-```sh
-python3 cgm.py pair --serial <SERIAL>
-# -> prints  AIDEX_PAIR_SUCCESS serial=<SERIAL> key=<32 hex chars>
-```
-
-Keep the pair key **private**: together with the (publicly-advertised) serial it grants full read
-access to your transmitter. Never commit it.
-
-## Web app
-
-```sh
-# locally:
-python3 -m http.server 8000        # then open Chrome at http://localhost:8000/
-```
-Open it, click **devices…**, enter the SN and tap **Pair** (fetches the key over BLE, offers to
-start the sensor) — or paste a key you already have. Multiple devices are supported (switch with the
-dropdown; all saved in your browser's localStorage, never in the page source). Then **Connect**:
-it handshakes, backfills only the missing history, charts it with zone shading, and
-persists per device across refresh. Unit toggle (mg/dL ↔ mmol/L), light/dark theme, **Export/Import**
-(one JSON backup of all sensors + data + settings, to move between browsers), Apple-Health export,
-and double-click-to-log events (coffee/meal/etc.).
-**Chrome/Edge on desktop or Android only** — Safari/Firefox/iOS don't support Web Bluetooth.
-Libraries (crypto-js, echarts) load from the jsDelivr CDN, pinned with Subresource Integrity hashes.
-
-### Deploy to GitHub Pages
-
-Push to GitHub and set **Settings → Pages → Source = GitHub Actions**. The included workflow
-(`.github/workflows/deploy.yml`) publishes `index.html` on every push to `main`. The page ships
-**no secrets** — each user enters their own serial/key.
-
-## Python CLI
-
-```sh
-python3 -m pip install --user bleak pycryptodome
-export AIDEX_SERIAL=<your serial>            # or pass --serial / --key each time
-export AIDEX_PAIR_KEY=<your 32-hex pair key>
-
-python3 cgm.py pair --serial <SERIAL>        # one-time: obtain the pair key (fresh transmitter)
-python3 cgm.py scan                          # passive: glucose from the advertisement
-python3 cgm.py read [--json]                 # connect + handshake + current value
-python3 cgm.py monitor --interval 60         # passive reading loop
-python3 cgm.py info                          # device info + sensor start time
-python3 cgm.py history --last 2h --format csv > glucose.csv   # backfill stored history
-python3 cgm.py history --since "21:00" --until "21:30"
-python3 cgm.py start-sensor --yes            # IRREVERSIBLE; refuses without --yes, and refuses a
-                                             # non-fresh sensor without --force
-```
-
-## Export to Apple Health (no iOS app)
-
-HealthKit is iOS-only, so something on the iPhone must write the data — but you don't have to build
-an app: Apple's built-in **Shortcuts** can log Blood Glucose to Health.
-
-1. Export a **downsampled, valid-only** JSON (Health doesn't need 1-minute resolution, and Shortcuts
-   logs samples one at a time):
-   ```sh
-   python3 cgm.py history --last 1d --valid-only --every 5 --format json > glucose.json
-   ```
-2. Get `glucose.json` onto the iPhone — AirDrop, or save to iCloud Drive / Files.
-3. Build a Shortcut once:
-   - **Get File** → pick `glucose.json`  (or **Get Contents of URL** if you host it)
-   - **Get Dictionary from** the file → a list
-   - **Repeat with Each** item in the list:
-     - **Get Dictionary Value** `glucose_mgdl`  → the value
-     - **Get Dictionary Value** `time` → **Get Dates from Input** → the date
-     - **Log Health Sample** → type **Blood Glucose**, unit **mg/dL**, Value = the value, Date = the date
-4. Run it and grant Health write permission once; re-run after each export to add new readings.
-
-An **experimental** prebuilt shortcut (`aidex-to-health.shortcut`) is included — import it with
-*Settings ▸ Shortcuts ▸ Advanced ▸ Allow Untrusted Shortcuts* enabled. It's hand-authored and
-untested (the Health action's type/unit enums are undocumented), so if it won't import or logs
-nothing, build it from the steps above — that path is reliable.
-
-Keep the count modest (use `--last` / `--every`). These are **uncalibrated** CGM values — don't treat
-them as clinical. (If you also use the official AiDEX app, it may already sync to Apple Health.)
+The apps do this for you — **Add a sensor → enter the SN → Pair** fetches and saves the key over
+Bluetooth. Pairing only works on a fresh / unpaired transmitter. Keep the pair key **private**:
+together with the (publicly-advertised) serial it grants full read access to your transmitter.
 
 ## Protocol, in one paragraph
 
@@ -113,16 +103,11 @@ details, byte maps, and a reproducible worked example: **[PROTOCOL.md](PROTOCOL.
 
 ## Glucose reference ranges (general guidance, not medical advice)
 
-**CGM zones** (color the live value and the chart's target band):
+**CGM target band** (shaded green on the chart, and the time-in-range metric): **70–180 mg/dL
+(3.9–10.0 mmol/L)**; below 70 is low, above 180 is high; urgent below 54 or above 250.
 
-| zone | mg/dL | mmol/L |
-|---|---|---|
-| low | < 70 | < 3.9 |
-| in range (target) | 70–180 | 3.9–10.0 |
-| high | > 180 | > 10.0 |
-| urgent | < 54 or > 250 | < 3.0 or > 13.9 |
-
-**Diagnostic thresholds — Mayo Clinic / ADA** (for blood tests under fasting / glucose-tolerance conditions, *not* arbitrary CGM readings):
+**Diagnostic thresholds — Mayo Clinic / ADA** (for blood tests under fasting / glucose-tolerance
+conditions, *not* arbitrary CGM readings), shown in the diagnostics panel:
 
 | test | normal | prediabetes | diabetes |
 |---|---|---|---|

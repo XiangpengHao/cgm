@@ -1,0 +1,52 @@
+[package]
+name = "cgm-web"
+description = "Web (WASM) build of the glucose app: Web Bluetooth transport, localStorage, and browser file/health export. Pure frontend, no server."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+cgm-core = { workspace = true }
+cgm-ui = { workspace = true }
+dioxus = { workspace = true, features = ["web"] }
+
+# Pinned to match the nix-provided wasm-bindgen-cli (0.2.118); dx checks this.
+wasm-bindgen = "=0.2.118"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+gloo-timers = { version = "0.3", features = ["futures"] }
+futures = "0.3"
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+    "Window",
+    "Navigator",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "HtmlAnchorElement",
+    "HtmlInputElement",
+    "Blob",
+    "BlobPropertyBag",
+    "Url",
+    "Storage",
+    "Crypto",
+    "Event",
+    "EventTarget",
+    "File",
+    "FileList",
+    "FileReader",
+    "ProgressEvent",
+    # Web Bluetooth (behind --cfg=web_sys_unstable_apis; see .cargo/config.toml)
+    "Bluetooth",
+    "BluetoothDevice",
+    "BluetoothRemoteGattServer",
+    "BluetoothRemoteGattService",
+    "BluetoothRemoteGattCharacteristic",
+    "BluetoothCharacteristicProperties",
+    "RequestDeviceOptions",
+    "BluetoothLeScanFilterInit",
+]

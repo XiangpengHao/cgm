@@ -1,15 +1,16 @@
 # Reverse-engineering inputs (proprietary app / large binaries — do not publish)
 tmp/
+models/
 
-# Build artifacts
-__pycache__/
-*.pyc
+# Rust / Dioxus build artifacts
+/target/
+.dioxus/
+/_site/
+
+# Nix / direnv
+.direnv/
 
 # Scratch, logs, local notes
-scratch_*.py
-scratch_*.mjs
-scratchpad_*.py
-scratchpad_*.log
 *.log
 MEMORY.md
 

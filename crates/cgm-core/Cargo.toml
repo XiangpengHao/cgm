@@ -1,0 +1,18 @@
+[package]
+name = "cgm-core"
+description = "Pure-Rust domain core for the AiDEX X / GX-01S glucose app: BLE protocol, crypto, glucose decoding, data model, persistence format. No platform dependencies."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+aes = { workspace = true }
+md-5 = { workspace = true }
+
+[lints.rust]
+# native `async fn` in our BleBackend trait — intentional, single-threaded use.
+async_fn_in_trait = "allow"

@@ -213,12 +213,19 @@ and only if the sensor is in tissue).
 
 ---
 
-## 11. Reference implementations in this repo
+## 11. Reference implementation in this repo
 
-- `cgm.py` — Python CLI (`bleak`): `pair` (§4), `scan`, `read`, `monitor`, `info`, `history`
-  (time-range backfill), `start-sensor` (guarded).
-- `index.html` — Web Bluetooth app (Chrome/Edge): connect, handshake, sync history, localStorage
-  persistence, ECharts chart, event logging. Read-only (cannot activate a sensor).
+All of §3–§9 live in **`crates/cgm-core`** as pure, dependency-light Rust, shared by both apps:
 
-Both implement §3–§9 identically; the crypto was verified against the device's own captured
-challenge→session-key vectors.
+- `crypto.rs` — AES-128-CFB128, MD5, CRC-16/CCITT, CRC-8/MAXIM, and the serial→IV / pair-secret
+  derivations (§3). Unit-tested against this document's worked vectors.
+- `protocol.rs` — DevComm2 framing, the reconnect handshake, and the `newSensor` payload (§5–§7, §10).
+- `glucose.rs` — broadcast / history / start-time / range decoding and the validity rules (§9).
+- `engine.rs` — a transport-agnostic `BleBackend` byte pipe plus connect → handshake → backfill →
+  poll orchestration, exercised by a scripted mock device.
+
+The transports implement only the raw `F002` read/write/notify pipe: `crates/cgm-web` over **Web
+Bluetooth** (Chrome/Edge), `crates/cgm-ios` over **CoreBluetooth** (iOS, which additionally writes
+Apple Health). Both gate the irreversible `newSensor` (`0x20`) behind the wizard's explicit
+"Start the sensor" confirmation and a NEW/USED state check (§10). The crypto was verified against
+the device's own captured challenge→session-key vectors.
