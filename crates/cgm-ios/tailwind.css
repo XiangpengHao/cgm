@@ -1,8 +1,0 @@
-@import "tailwindcss";
-
-/* The iOS app renders the shared cgm-ui components, so scan that crate (plus
-   this one) for class names. */
-@source "../cgm-ui/src/**/*.rs";
-@source "./src/**/*.rs";
-
-@custom-variant dark (&:where(.dark, .dark *));

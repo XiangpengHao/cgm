@@ -85,8 +85,9 @@ pub struct EventDraft {
     pub anchored: bool,
 }
 
-/// A modal confirm/prompt request, rendered in-app so it works identically on
-/// web and iOS (native `window.confirm`/`prompt` aren't reachable on iOS).
+/// A modal confirm/prompt request, rendered in-app rather than via native
+/// `window.confirm`/`prompt` (unreliable in some mobile browsers), so dialogs
+/// look and behave consistently.
 #[derive(Clone, PartialEq)]
 pub enum Dialog {
     Confirm {

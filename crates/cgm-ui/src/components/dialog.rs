@@ -1,7 +1,7 @@
-//! Cross-platform in-app confirm/prompt dialog + a transient toast. These
-//! replace `window.confirm`/`window.prompt` (unreachable on the iOS WebView)
-//! and the silent diagnostics-only feedback, so destructive actions, renames,
-//! and import/export confirmations behave identically on web and iOS.
+//! In-app confirm/prompt dialog + a transient toast. These replace
+//! `window.confirm`/`window.prompt` (unreliable in some mobile browsers) and
+//! the silent diagnostics-only feedback, so destructive actions, renames, and
+//! import/export confirmations behave consistently.
 
 use crate::actions::{use_actions, Actions};
 use crate::state::{AppState, ConfirmKind, ConnStatus, Dialog, PromptKind};

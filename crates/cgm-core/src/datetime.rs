@@ -1,7 +1,7 @@
 //! Minimal, dependency-free UTC date math + RFC 3339 (the only timestamp format
-//! the app stores). We avoid a date crate so the core stays portable to wasm and
-//! iOS with no platform time dependency; *local-time* formatting is the
-//! platform's job (it supplies the UTC offset).
+//! the app stores). We avoid a date crate so the core stays portable to wasm
+//! with no platform time dependency; *local-time* formatting is the platform's
+//! job (it supplies the UTC offset).
 
 /// Civil (Y, M, D) -> days since the Unix epoch. Howard Hinnant's algorithm.
 fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {

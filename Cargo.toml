@@ -5,17 +5,12 @@ members = [
     "crates/cgm-ui",
     "crates/cgm-web",
 ]
-# cgm-web is WASM-only (Web Bluetooth) and cgm-ios is macOS-only, so the host
-# `cargo build`/`test` set is just the portable crates; build the apps with
-# `dx build` / the iOS toolchain respectively.
+# cgm-web is WASM-only (Web Bluetooth), so the host `cargo build`/`test` set is
+# just the portable crates; build the web app with `dx build`.
 default-members = [
     "crates/cgm-core",
     "crates/cgm-ui",
 ]
-# The iOS app depends on the Apple SDK (CoreBluetooth/HealthKit via objc2) and
-# only builds on macOS, so it is excluded from this (Linux/CI) workspace. It is
-# a standalone crate with path deps — see crates/cgm-ios/README.md.
-exclude = ["crates/cgm-ios"]
 
 [workspace.package]
 version = "0.1.0"
@@ -31,7 +26,7 @@ cgm-ui = { path = "crates/cgm-ui" }
 dioxus = { version = "0.7" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# crypto building blocks (pure-Rust, wasm + iOS friendly)
+# crypto building blocks (pure-Rust, wasm-friendly)
 aes = "0.8"
 md-5 = "0.10"
 

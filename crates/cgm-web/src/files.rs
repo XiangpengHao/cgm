@@ -95,8 +95,4 @@ impl Files for WebFiles {
             ))
         })
     }
-
-    fn health_is_native(&self) -> bool {
-        false
-    }
 }

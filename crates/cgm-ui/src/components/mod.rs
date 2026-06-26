@@ -1,4 +1,4 @@
-//! All shared UI components. Each renders the same on web and iOS.
+//! All shared UI components.
 
 mod chart;
 mod devices;

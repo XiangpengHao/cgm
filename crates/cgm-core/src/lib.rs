@@ -14,7 +14,7 @@
 //! * [`engine`] — a `BleBackend` byte pipe and the connect/handshake/sync logic.
 //! * [`datetime`] — dependency-free UTC date math + RFC 3339.
 //!
-//! Web and iOS each implement only a thin `Storage` and `BleBackend`; all the
+//! The web app implements only a thin `Storage` and `BleBackend`; all the
 //! domain logic is shared and tested here.
 
 pub mod crypto;

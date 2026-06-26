@@ -1,6 +1,6 @@
 [package]
 name = "cgm-ui"
-description = "Shared Dioxus UI for the glucose app: components, reactive state, and platform-service traits. Renders identically on web and iOS."
+description = "Shared Dioxus UI for the glucose app: components, reactive state, and platform-service traits."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

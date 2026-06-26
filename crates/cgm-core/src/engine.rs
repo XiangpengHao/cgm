@@ -1,7 +1,7 @@
 //! The protocol engine: a thin, platform-agnostic [`BleBackend`] byte pipe plus
 //! the connect → handshake → read/sync orchestration on top of it. All crypto
-//! and decoding lives in the core, so the web (Web Bluetooth) and iOS
-//! (CoreBluetooth) backends only have to move raw bytes.
+//! and decoding lives in the core, so the web (Web Bluetooth) backend only has
+//! to move raw bytes.
 //!
 //! [`BleBackend`] is object-safe (its async methods return boxed local futures)
 //! so the UI can hold a `Box<dyn BleBackend>` without making every component
@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 
-/// A future that need not be `Send` (web/iOS run single-threaded).
+/// A future that need not be `Send` (the web app runs single-threaded).
 pub type LocalFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
 /// A transport error, carried as a human-readable message.
@@ -40,7 +40,7 @@ impl core::fmt::Display for BleError {
 }
 
 /// A raw BLE byte pipe for the DevComm2 `F002` channel. The contract matches
-/// what both Web Bluetooth and CoreBluetooth expose:
+/// what Web Bluetooth exposes:
 ///
 /// * [`read_value`](BleBackend::read_value) — a GATT *read* of `F002` (the
 ///   17-byte reconnect challenge).

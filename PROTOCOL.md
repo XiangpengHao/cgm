@@ -215,7 +215,7 @@ and only if the sensor is in tissue).
 
 ## 11. Reference implementation in this repo
 
-All of §3–§9 live in **`crates/cgm-core`** as pure, dependency-light Rust, shared by both apps:
+All of §3–§9 live in **`crates/cgm-core`** as pure, dependency-light Rust, shared across the app:
 
 - `crypto.rs` — AES-128-CFB128, MD5, CRC-16/CCITT, CRC-8/MAXIM, and the serial→IV / pair-secret
   derivations (§3). Unit-tested against this document's worked vectors.
@@ -224,8 +224,8 @@ All of §3–§9 live in **`crates/cgm-core`** as pure, dependency-light Rust, s
 - `engine.rs` — a transport-agnostic `BleBackend` byte pipe plus connect → handshake → backfill →
   poll orchestration, exercised by a scripted mock device.
 
-The transports implement only the raw `F002` read/write/notify pipe: `crates/cgm-web` over **Web
-Bluetooth** (Chrome/Edge), `crates/cgm-ios` over **CoreBluetooth** (iOS, which additionally writes
-Apple Health). Both gate the irreversible `newSensor` (`0x20`) behind the wizard's explicit
-"Start the sensor" confirmation and a NEW/USED state check (§10). The crypto was verified against
-the device's own captured challenge→session-key vectors.
+The transport implements only the raw `F002` read/write/notify pipe: `crates/cgm-web` over **Web
+Bluetooth** (Chrome/Edge, including iOS WebBLE browsers like Bluefy). It gates the irreversible
+`newSensor` (`0x20`) behind the wizard's explicit "Start the sensor" confirmation and a NEW/USED
+state check (§10). The crypto was verified against the device's own captured
+challenge→session-key vectors.

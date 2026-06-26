@@ -1,7 +1,6 @@
 //! Apple Health export: the valid, downsampled (1 per 5 min) reading list that
-//! the Shortcuts recipe logs as Blood Glucose. On iOS the same `samples` feed a
-//! direct HealthKit write; on web they serialize to the `glucose-health.json`
-//! the Shortcut reads.
+//! the Shortcuts recipe logs as Blood Glucose. The `samples` serialize to the
+//! `glucose-health.json` the Shortcut reads.
 
 use crate::datetime::epoch_ms_to_rfc3339;
 use crate::glucose::record_valid;

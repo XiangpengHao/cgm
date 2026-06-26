@@ -2,8 +2,7 @@
 //!
 //! The shared Dioxus UI for the glucose app. It depends only on [`cgm_core`] and
 //! `dioxus`; everything device- or browser-specific is reached through the
-//! [`platform`] traits, so this exact UI renders on both the web (WASM) and iOS
-//! (Dioxus mobile) targets.
+//! [`platform`] traits, so this exact UI renders on the web (WASM) target.
 //!
 //! A backend builds a `Platform`, provides it via context, and renders [`App`].
 

@@ -1,6 +1,6 @@
 //! Sensor management modal: the device list (use / rename / remove) and the
 //! guided add-sensor wizard (name → pair → start → connect). Rename/remove use
-//! the in-app dialog so they work on iOS too.
+//! the in-app dialog.
 
 use crate::actions::use_actions;
 use crate::state::{AppState, ConfirmKind, ConnStatus, Dialog, PromptKind};

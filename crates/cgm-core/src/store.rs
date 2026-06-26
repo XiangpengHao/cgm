@@ -1,5 +1,5 @@
 //! Persistence: a tiny string key/value `Storage` abstraction (localStorage on
-//! web, a file/UserDefaults on iOS) plus a `Repository` that reads and writes
+//! web) plus a `Repository` that reads and writes
 //! the registry, per-device data and settings, and handles the full
 //! export/import backup. Everything here is byte-compatible with the existing
 //! web app, including the one-time migration from the old single-device layout.
@@ -27,7 +27,7 @@ pub trait Storage {
 }
 
 // Blanket impls so the UI can hold an `Rc<dyn Storage>` / `Box<dyn Storage>`
-// (single-threaded web/iOS) and still build a `Repository` over it.
+// (single-threaded web) and still build a `Repository` over it.
 impl<S: Storage + ?Sized> Storage for std::rc::Rc<S> {
     fn get(&self, key: &str) -> Option<String> {
         (**self).get(key)

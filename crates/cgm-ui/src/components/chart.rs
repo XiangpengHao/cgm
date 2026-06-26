@@ -1,12 +1,16 @@
-//! The glucose chart — a self-contained, dependency-free SVG line chart with a
-//! green/amber/red background zones, hour gridlines, event markers, and
-//! touch-first interaction:
+//! The glucose chart — a self-contained, dependency-free SVG line chart with
+//! green/amber/red background zones, hour gridlines, event markers, and an
+//! Apple-Health-style touch interaction:
 //!
-//! * **drag** left/right to pan the visible window (mouse drag or touch swipe),
-//! * **tap / hover** to pin a value readout (works on touch, where there is no
-//!   hover),
-//! * **double-click** (desktop) or the **＋ Log event** button (touch) to log an
-//!   event.
+//! * **scrub** — touch (or hover, on desktop) anywhere to move a selection: a
+//!   full-height vertical rule, a zone-colored halo + hollow dot snapped to the
+//!   nearest reading, and a floating value/time callout pinned to the top.
+//! * **＋ Log event** — logs at the scrubbed time, or at the latest reading when
+//!   nothing is selected; the button relabels to "＋ Log at HH:MM" while a point
+//!   is selected.
+//!
+//! Time ranging is owned by the segmented window control (3h/6h/12h/24h/All), so
+//! the chart body has no free-pan — every touch is an unambiguous read.
 //!
 //! The SVG is fluid (`width:100%` + a viewBox matching the measured container
 //! width), so it fills its card on every viewport and keeps pointer hit-testing
@@ -17,46 +21,90 @@ use crate::platform::SharedPlatform;
 use crate::state::{AppState, EventDraft};
 use crate::ui::BTN_GHOST_SM;
 use cgm_core::glucose::record_valid;
-use cgm_core::ranges::{band_edges, classify};
+use cgm_core::ranges::{band_edges, classify, Zone};
 use cgm_core::stats::{convert, format_value};
 use dioxus::prelude::*;
 
 // Plot geometry. The SVG renders at the measured pixel width with viewBox ==
 // width (and no preserveAspectRatio), so 1 user unit == 1 rendered px and text
-// is never distorted. Height is responsive (see `chart_height`).
-const PAD_L: f64 = 44.0;
-const PAD_R: f64 = 14.0;
+// is never distorted. Height is responsive (see `chart_height`). The gutters are
+// tiny so the trace runs nearly edge-to-edge (Apple Stocks/Health style); the
+// y-axis is just the two self-labeling zone-boundary lines, so no reserved
+// left column is needed.
+const PAD_L: f64 = 6.0;
+const PAD_R: f64 = 6.0;
 const PAD_T: f64 = 14.0;
-const PAD_B: f64 = 26.0;
+const PAD_B: f64 = 20.0;
 const HOUR_MS: i64 = 3_600_000;
 
 struct Pt {
     t: i64,
     v: f64,
     valid: bool,
+    /// Raw stored mg/dL (zone classification is unit-blind).
+    g: u16,
 }
 
-/// Nearest valid reading to instant `t`, as `(t, value)`.
-fn nearest(pts: &[(i64, f64, bool)], t: i64) -> Option<(i64, f64)> {
+/// A pinned selection produced by scrubbing the chart.
+#[derive(Clone, PartialEq)]
+struct Sel {
+    /// Plot x/y of the selected reading (user units == px).
+    sx: f64,
+    sy: f64,
+    /// Display value (already unit-converted) and its unit label.
+    val: String,
+    unit: &'static str,
+    /// Local HH:MM of the reading.
+    time: String,
+    /// Zone band color for the reading.
+    color: &'static str,
+    /// The reading's instant (epoch ms), for logging an event at this point.
+    t_ms: i64,
+}
+
+/// Nearest valid reading to instant `t`, as `(t, display_value, raw_mgdl)`.
+fn nearest(pts: &[(i64, f64, bool, u16)], t: i64) -> Option<(i64, f64, u16)> {
     pts.iter()
-        .filter(|(_, _, valid)| *valid)
-        .min_by_key(|(pt, _, _)| (pt - t).abs())
-        .map(|(pt, v, _)| (*pt, *v))
+        .filter(|(_, _, valid, _)| *valid)
+        .min_by_key(|(pt, _, _, _)| (pt - t).abs())
+        .map(|(pt, v, _, g)| (*pt, *v, *g))
+}
+
+/// The zone band color for a raw mg/dL reading (matches the background bands).
+fn zone_color(mgdl: u16) -> &'static str {
+    match classify(mgdl) {
+        Zone::InRange => "rgb(55 211 154)",
+        Zone::Elevated => "rgb(240 169 43)",
+        Zone::High => "rgb(255 93 93)",
+    }
 }
 
 #[component]
 pub fn GlucoseChart() -> Element {
     let state = use_context::<AppState>();
     let platform = use_context::<SharedPlatform>();
-    let mut hover = use_signal(|| None::<(f64, f64, String)>);
-    // Drag state captured at pointer-down: (start_px, start_t0, start_t1).
-    let mut drag = use_signal(|| None::<(f64, i64, i64)>);
-    let mut chart_view = state.chart_view;
+    let mut hover = use_signal(|| None::<Sel>);
     let mut event_draft = state.event_draft;
     let mut width_sig = state.chart_width;
 
+    // A pinned selection caches its on-plot position + value against the current
+    // domain and unit, so clear it whenever the visible window or unit changes —
+    // otherwise the marker/callout would render against a stale domain until the
+    // next scrub. (Per-minute data updates shift the domain imperceptibly.)
+    use_effect(move || {
+        let _ = state.window_hours.read();
+        let _ = state.chart_view.read();
+        let _ = state.settings.read().unit;
+        hover.set(None);
+    });
+
     let unit = state.settings.read().unit;
     let mgdl = unit.is_mgdl();
+    // Surface color for the callout chip, the hollow selection dot, and the
+    // y-label backings — matches the card (white / slate-900) so they read
+    // cleanly over the colored zone bands in both themes.
+    let dark = state.settings.read().theme == cgm_core::model::Theme::Dark;
+    let surface = if dark { "#0f172a" } else { "#ffffff" };
     let offset = platform.clock().local_offset_minutes();
     let now = platform.clock().now_ms();
     // Drives both the viewBox and the x-axis math; must equal the measured CSS
@@ -71,6 +119,8 @@ pub fn GlucoseChart() -> Element {
         320.0
     };
     let window_hours = *state.window_hours.read();
+    // `chart_view` is reset to None by every code path now that drag-to-pan is
+    // gone (the window control owns ranging); kept for a possible future pan.
     let view = *state.chart_view.read();
 
     let data = state.data.read();
@@ -83,6 +133,7 @@ pub fn GlucoseChart() -> Element {
                 t: s0 + i as i64 * 60_000,
                 v: convert(g, unit),
                 valid: record_valid(g, rs, i as i32),
+                g,
             });
         }
     }
@@ -132,7 +183,10 @@ pub fn GlucoseChart() -> Element {
     let elevated = zone_band(edges[0], edges[1]); // 5.6–7.8 amber
     let high = zone_band(edges[1], ymax); // > 7.8 red
 
-    // Dashed, labeled boundary lines at both edges (5.6 / 7.8), shown when in view.
+    // Dashed boundary lines at both edges (5.6 / 7.8), labeled inline at the
+    // quiet left edge (the live data and callout live on the right). The third
+    // tuple field is a backing-pill width that keeps the digits legible where
+    // they cross a colored band.
     let fmt_edge = move |v: f64| -> String {
         if mgdl {
             format!("{}", v.round() as i64)
@@ -140,10 +194,14 @@ pub fn GlucoseChart() -> Element {
             format!("{v:.1}")
         }
     };
-    let edge_lines: Vec<(f64, String)> = edges
+    let edge_lines: Vec<(f64, String, f64)> = edges
         .iter()
         .filter(|&&v| v > ymin && v < ymax)
-        .map(|&v| (y(v), fmt_edge(v)))
+        .map(|&v| {
+            let label = fmt_edge(v);
+            let bw = label.len() as f64 * 5.5 + 6.0;
+            (y(v), label, bw)
+        })
         .collect();
 
     let mut line = String::new();
@@ -177,17 +235,6 @@ pub fn GlucoseChart() -> Element {
         tk += step;
     }
 
-    let mut yticks: Vec<(f64, String)> = Vec::new();
-    for k in 0..=4 {
-        let v = ymin + (ymax - ymin) * k as f64 / 4.0;
-        let label = if mgdl {
-            format!("{}", v.round() as i64)
-        } else {
-            format!("{v:.1}")
-        };
-        yticks.push((y(v), label));
-    }
-
     let events: Vec<(f64, String)> = data
         .events
         .iter()
@@ -218,93 +265,61 @@ pub fn GlucoseChart() -> Element {
 
     // Only points in the visible window are pinnable, so the marker never lands
     // off the plot.
-    let move_pts: Vec<(i64, f64, bool)> = pts
+    let move_pts: Vec<(i64, f64, bool, u16)> = pts
         .iter()
         .filter(|p| p.t >= t0 && p.t <= t1)
-        .map(|p| (p.t, p.v, p.valid))
+        .map(|p| (p.t, p.v, p.valid, p.g))
         .collect();
     // A closure that pins the readout at the nearest valid reading to `elem_x`.
     let pin_pts = move_pts.clone();
-    let pin = move |elem_x: f64, mut hover: Signal<Option<(f64, f64, String)>>| {
-        if let Some((bt, bv)) = nearest(&pin_pts, to_time(elem_x)) {
-            let label = if mgdl {
-                format!(
-                    "{} mg/dL · {}",
-                    bv.round() as i64,
-                    cgm_core::datetime::format_hm(bt, offset)
-                )
+    let pin = move |elem_x: f64, mut hover: Signal<Option<Sel>>| {
+        if let Some((bt, bv, g)) = nearest(&pin_pts, to_time(elem_x)) {
+            let (val, unit_label) = if mgdl {
+                (format!("{}", bv.round() as i64), "mg/dL")
             } else {
-                format!("{bv:.1} mmol/L · {}", cgm_core::datetime::format_hm(bt, offset))
+                (format!("{bv:.1}"), "mmol/L")
             };
-            hover.set(Some((x(bt), y(bv), label)));
+            hover.set(Some(Sel {
+                sx: x(bt),
+                sy: y(bv),
+                val,
+                unit: unit_label,
+                time: cgm_core::datetime::format_hm(bt, offset),
+                color: zone_color(g),
+                t_ms: bt,
+            }));
         }
     };
 
+    // Scrub is the only plot gesture: pointerdown/move pin the nearest reading,
+    // leave/cancel clear it, and pointerup keeps it pinned so the user can lift
+    // a finger and read (Apple Health behavior). On desktop, plain hover scrubs.
     let pin_down = pin.clone();
-    let on_down = move |evt: PointerEvent| {
-        let ex = evt.element_coordinates().x;
-        drag.set(Some((ex, t0, t1)));
-        pin_down(ex, hover); // tap-to-read (works on touch, where there is no hover)
-    };
+    let on_down = move |evt: PointerEvent| pin_down(evt.element_coordinates().x, hover);
+    let on_move = move |evt: PointerEvent| pin(evt.element_coordinates().x, hover);
+    let clear_sel = move |_: PointerEvent| hover.set(None);
 
-    let on_move = move |evt: PointerEvent| {
-        let ex = evt.element_coordinates().x;
-        if let Some((sx, st0, st1)) = drag() {
-            let dx = ex - sx;
-            if dx.abs() <= 4.0 {
-                pin(ex, hover); // a small move is a tap → read, don't pan
-                return;
-            }
-            // Pan: shift the window by the dragged distance, clamped to data.
-            let wspan = st1 - st0;
-            let dt = (-(dx) / plot_w * wspan as f64) as i64;
-            let (mut a, mut b) = (st0 + dt, st1 + dt);
-            let range = latest - earliest;
-            if wspan >= range {
-                a = earliest;
-                b = latest;
-            } else {
-                if a < earliest {
-                    a = earliest;
-                    b = earliest + wspan;
-                }
-                if b > latest {
-                    b = latest;
-                    a = latest - wspan;
-                }
-            }
-            chart_view.set(Some((a, b)));
-        } else {
-            pin(ex, hover);
-        }
-    };
-
-    // A normal release keeps the pinned readout; cancel/leave clear it.
-    let end_drag = move |_: PointerEvent| drag.set(None);
-    let clear_all = move |_: PointerEvent| {
-        drag.set(None);
-        hover.set(None);
-    };
-
-    let on_dbl = move |evt: MouseEvent| {
-        let t = to_time(evt.element_coordinates().x);
-        let c = evt.client_coordinates();
-        event_draft.set(Some(EventDraft {
-            t_ms: t,
-            x: c.x,
-            y: c.y,
-            anchored: true,
-        }));
-    };
-
+    // The ＋ button logs at the scrubbed instant when a point is selected, else
+    // at the latest reading. Centered (touch-friendly) popover either way.
     let log_event = move |_| {
-        // Touch-friendly path: log at the latest reading, popover centered.
+        let t_ms = hover().map(|s| s.t_ms).unwrap_or(latest);
         event_draft.set(Some(EventDraft {
-            t_ms: latest,
+            t_ms,
             x: 0.0,
             y: 0.0,
             anchored: false,
         }));
+    };
+
+    let (helper, log_label) = match hover() {
+        Some(s) => (
+            format!("Reading {} · tap ＋ to log here", s.time),
+            format!("＋ Log at {}", s.time),
+        ),
+        None => (
+            "Slide to read · use the buttons above to change range · ＋ logs a note".to_string(),
+            "＋ Log event".to_string(),
+        ),
     };
 
     let on_mounted = move |evt: MountedEvent| {
@@ -338,10 +353,8 @@ pub fn GlucoseChart() -> Element {
                 style: "display:block; width:100%; max-width:100%; touch-action: pan-y; cursor: crosshair;",
                 onpointerdown: on_down,
                 onpointermove: on_move,
-                onpointerup: end_drag,
-                onpointerleave: clear_all,
-                onpointercancel: clear_all,
-                ondoubleclick: on_dbl,
+                onpointerleave: clear_sel,
+                onpointercancel: clear_sel,
 
                 // Background zones (single source of truth): green in-range
                 // (≤ 5.6), amber elevated (5.6–7.8), red high (> 7.8).
@@ -355,27 +368,20 @@ pub fn GlucoseChart() -> Element {
                 if high.1 > 0.0 {
                     rect { x: "{PAD_L}", y: "{high.0}", width: "{plot_w}", height: "{high.1}", fill: "rgb(255 93 93 / 0.14)" }
                 }
+
                 // Labeled dashed boundary lines at the two zone edges (5.6 / 7.8).
-                for (ey , label) in edge_lines.iter() {
+                for (ey , label , bw) in edge_lines.iter() {
                     line {
                         x1: "{PAD_L}", y1: "{ey}", x2: "{width - PAD_R}", y2: "{ey}",
                         stroke: "currentColor", stroke_width: "1", stroke_dasharray: "3 3", opacity: "0.35",
                     }
-                    text {
-                        x: "{PAD_L + 3.0}", y: "{ey - 2.0}", font_size: "9",
-                        fill: "currentColor", opacity: "0.6",
-                        "{label}"
-                    }
-                }
-
-                for (gy , label) in yticks.iter() {
-                    line {
-                        x1: "{PAD_L}", y1: "{gy}", x2: "{width - PAD_R}", y2: "{gy}",
-                        stroke: "currentColor", stroke_width: "0.5", opacity: "0.12",
+                    rect {
+                        x: "{PAD_L}", y: "{ey - 11.0}", width: "{bw}", height: "11", rx: "2",
+                        fill: "{surface}", opacity: "0.7",
                     }
                     text {
-                        x: "{PAD_L - 6.0}", y: "{gy + 3.0}", text_anchor: "end",
-                        font_size: "10", fill: "currentColor", opacity: "0.55",
+                        x: "{PAD_L + 3.0}", y: "{ey - 2.5}", font_size: "9",
+                        fill: "currentColor", opacity: "0.7",
                         "{label}"
                     }
                 }
@@ -415,12 +421,51 @@ pub fn GlucoseChart() -> Element {
                     }
                 }
 
-                if let Some((hx , hy , label)) = hover() {
-                    circle { cx: "{hx}", cy: "{hy}", r: "3.5", fill: "rgb(56 132 255)" }
-                    text {
-                        x: "{(hx).min(width - 120.0).max(PAD_L)}", y: "{(hy - 8.0).max(PAD_T + 8.0)}",
-                        font_size: "11", font_weight: "600", fill: "currentColor",
-                        "{label}"
+                // Selection scrubber + floating callout, drawn last so it is
+                // never occluded by the trace.
+                {
+                    if let Some(s) = hover() {
+                        let cw = ((s.val.len() as f64) * 9.0 + (s.unit.len() as f64) * 6.0 + 20.0)
+                            .clamp(60.0, (width - 2.0 * PAD_L).max(60.0));
+                        let lo = PAD_L;
+                        let hi = (width - PAD_R - cw).max(lo);
+                        let cx = (s.sx - cw / 2.0).clamp(lo, hi);
+                        // Pin the callout to the top, but flip it below the point
+                        // when the reading sits high in the plot so the chip never
+                        // hides the very dot it describes.
+                        let cy = if s.sy < PAD_T + 48.0 {
+                            (s.sy + 14.0).min(h - PAD_B - 34.0)
+                        } else {
+                            PAD_T
+                        };
+                        rsx! {
+                            line {
+                                x1: "{s.sx}", y1: "{PAD_T}", x2: "{s.sx}", y2: "{h - PAD_B}",
+                                stroke: "currentColor", stroke_width: "1", opacity: "0.25",
+                            }
+                            circle { cx: "{s.sx}", cy: "{s.sy}", r: "11", fill: "{s.color}", opacity: "0.15" }
+                            circle {
+                                cx: "{s.sx}", cy: "{s.sy}", r: "5",
+                                fill: "{surface}", stroke: "{s.color}", stroke_width: "3",
+                            }
+                            rect { x: "{cx}", y: "{cy}", width: "{cw}", height: "34", rx: "7", fill: "{surface}" }
+                            rect {
+                                x: "{cx}", y: "{cy}", width: "{cw}", height: "34", rx: "7",
+                                fill: "none", stroke: "currentColor", stroke_width: "1", opacity: "0.12",
+                            }
+                            text {
+                                x: "{cx + 8.0}", y: "{cy + 16.0}", font_size: "15", font_weight: "700",
+                                fill: "{s.color}", style: "font-variant-numeric: tabular-nums;",
+                                "{s.val}"
+                                tspan { font_size: "9", font_weight: "500", opacity: "0.6", fill: "currentColor", " {s.unit}" }
+                            }
+                            text {
+                                x: "{cx + 8.0}", y: "{cy + 28.0}", font_size: "10", opacity: "0.6",
+                                fill: "currentColor", style: "font-variant-numeric: tabular-nums;", "{s.time}"
+                            }
+                        }
+                    } else {
+                        rsx! {}
                     }
                 }
 
@@ -433,14 +478,12 @@ pub fn GlucoseChart() -> Element {
                 }
             }
             div { class: "mt-1 flex items-center justify-between gap-2",
-                p { class: "text-xs text-slate-500 dark:text-slate-400",
-                    "Drag to pan · tap a point to read it"
-                }
+                p { class: "text-xs text-slate-500 dark:text-slate-400", "{helper}" }
                 button {
                     class: "{BTN_GHOST_SM}",
                     disabled: !has_points,
                     onclick: log_event,
-                    "＋ Log event"
+                    "{log_label}"
                 }
             }
         }

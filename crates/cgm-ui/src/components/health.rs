@@ -1,8 +1,7 @@
-//! Apple Health export panel. On iOS this writes Blood Glucose to HealthKit
-//! directly; on web it produces the JSON the built-in Shortcuts recipe logs.
+//! Apple Health export panel: produces the JSON the built-in Shortcuts recipe
+//! logs as Blood Glucose.
 
 use crate::actions::use_actions;
-use crate::platform::SharedPlatform;
 use crate::state::AppState;
 use cgm_core::health::health_samples;
 use dioxus::prelude::*;
@@ -10,14 +9,12 @@ use dioxus::prelude::*;
 #[component]
 pub fn HealthModal() -> Element {
     let mut state = use_context::<AppState>();
-    let platform = use_context::<SharedPlatform>();
     let actions = use_actions();
 
     if !*state.show_health.read() {
         return rsx! {};
     }
 
-    let native = platform.files().health_is_native();
     let count = health_samples(&state.data.read()).len();
 
     let primary = "h-9 px-4 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold disabled:opacity-50";
@@ -36,52 +33,35 @@ pub fn HealthModal() -> Element {
                     button { class: "{ghost}", onclick: move |_| state.show_health.set(false), "close" }
                 }
 
-                if native {
-                    div { class: "mt-3 space-y-3",
-                        p { class: "text-sm text-slate-600 dark:text-slate-300",
-                            "Write your valid readings (1 per 5 minutes) to the Health app as Blood Glucose."
-                        }
+                div { class: "mt-3 space-y-3",
+                    p { class: "text-sm text-slate-600 dark:text-slate-300",
+                        "HealthKit is iOS-only, but Apple's built-in "
+                        b { "Shortcuts" }
+                        " app can log Blood Glucose — nothing to install."
+                    }
+                    div { class: "flex items-center gap-3",
                         button {
                             class: "{primary}",
                             disabled: count == 0,
                             onclick: move |_| actions.export_health(),
-                            "Write {count} readings to Health"
+                            "⬇ Download Health JSON"
                         }
-                        p { class: "text-xs text-slate-400 dark:text-slate-500",
-                            "You'll be asked to grant Health write access the first time."
+                        span { class: "text-xs text-slate-400 dark:text-slate-500",
+                            "{count} valid readings · 1 per 5 min"
                         }
                     }
-                } else {
-                    div { class: "mt-3 space-y-3",
-                        p { class: "text-sm text-slate-600 dark:text-slate-300",
-                            "HealthKit is iOS-only, but Apple's built-in "
-                            b { "Shortcuts" }
-                            " app can log Blood Glucose — nothing to install."
+                    ol { class: "list-decimal pl-5 text-sm text-slate-600 dark:text-slate-300 space-y-1.5",
+                        li { "Get " code { "glucose-health.json" } " onto your iPhone (AirDrop, Files, or iCloud Drive)." }
+                        li {
+                            "In Shortcuts, build: " b { "Get File" } " → " b { "Get Dictionary from Input" }
+                            " → " b { "Repeat with Each" } " → " b { "Get Dictionary Value" } " "
+                            code { "glucose_mgdl" } " and " code { "time" }
+                            " → " b { "Log Health Sample" } " (Blood Glucose · mg/dL · value · date)."
                         }
-                        div { class: "flex items-center gap-3",
-                            button {
-                                class: "{primary}",
-                                disabled: count == 0,
-                                onclick: move |_| actions.export_health(),
-                                "⬇ Download Health JSON"
-                            }
-                            span { class: "text-xs text-slate-400 dark:text-slate-500",
-                                "{count} valid readings · 1 per 5 min"
-                            }
-                        }
-                        ol { class: "list-decimal pl-5 text-sm text-slate-600 dark:text-slate-300 space-y-1.5",
-                            li { "Get " code { "glucose-health.json" } " onto your iPhone (AirDrop, Files, or iCloud Drive)." }
-                            li {
-                                "In Shortcuts, build: " b { "Get File" } " → " b { "Get Dictionary from Input" }
-                                " → " b { "Repeat with Each" } " → " b { "Get Dictionary Value" } " "
-                                code { "glucose_mgdl" } " and " code { "time" }
-                                " → " b { "Log Health Sample" } " (Blood Glucose · mg/dL · value · date)."
-                            }
-                            li { "Run it and allow Health access. Re-run after each export to add new readings." }
-                        }
-                        p { class: "text-xs text-slate-400 dark:text-slate-500",
-                            "Uncalibrated CGM values — not for clinical use."
-                        }
+                        li { "Run it and allow Health access. Re-run after each export to add new readings." }
+                    }
+                    p { class: "text-xs text-slate-400 dark:text-slate-500",
+                        "Uncalibrated CGM values — not for clinical use."
                     }
                 }
             }

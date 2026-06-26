@@ -1,7 +1,7 @@
-//! Platform-service traits the UI depends on. Each backend (web, iOS) provides
-//! one concrete `Platform`; the UI never touches `web-sys`, `objc2`, or any
-//! device API directly. Async methods return boxed *local* futures so the
-//! trait objects stay object-safe on single-threaded web/iOS.
+//! Platform-service traits the UI depends on. The web backend provides one
+//! concrete `Platform`; the UI never touches `web-sys` or any device API
+//! directly. Async methods return boxed *local* futures so the trait objects
+//! stay object-safe on the single-threaded web target.
 
 use cgm_core::engine::{BleBackend, LocalFuture};
 use cgm_core::protocol::NewSensorTime;
@@ -31,7 +31,7 @@ pub trait Clock {
 /// BLE lifecycle: pairing and opening an authenticated transport. The platform
 /// owns the device chooser and any reuse of a just-paired device.
 pub trait Ble {
-    /// Whether Web Bluetooth / CoreBluetooth is usable at all.
+    /// Whether Web Bluetooth is usable at all.
     fn available(&self) -> bool;
 
     /// First-time pairing on a *fresh* transmitter: write `secret` to `F001` and
@@ -49,22 +49,16 @@ pub trait Ble {
 
 /// File import/export and Apple Health.
 pub trait Files {
-    /// Save `contents` as a file (browser download / iOS share sheet).
+    /// Save `contents` as a file (browser download).
     fn download(&self, filename: &str, mime: &str, contents: &str);
 
     /// Pick a file and return its UTF-8 contents, or `None` if cancelled.
     fn pick_text(&self) -> LocalFuture<'static, Option<String>>;
 
-    /// Export Apple Health samples. On web this downloads the Shortcut JSON; on
-    /// iOS it writes directly to HealthKit. Returns a human-readable result.
+    /// Export Apple Health samples by downloading the JSON the built-in
+    /// Shortcuts recipe logs as Blood Glucose. Returns a human-readable result.
     fn export_health(&self, json: String, samples: usize)
     -> LocalFuture<'static, Result<String, String>>;
-
-    /// Whether this platform writes Health *directly* (iOS) vs via the Shortcut
-    /// recipe (web). Lets the UI tailor the Apple Health panel.
-    fn health_is_native(&self) -> bool {
-        false
-    }
 }
 
 /// The umbrella a backend implements and provides to the UI via context.

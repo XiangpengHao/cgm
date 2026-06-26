@@ -1,5 +1,5 @@
 {
-  description = "AiDEX X / GX-01S — Dioxus glucose app (web + iOS), shared Rust core";
+  description = "AiDEX X / GX-01S — Dioxus glucose web app, shared Rust core";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -38,9 +38,7 @@
               just
               fd
 
-              # Rust nightly with the wasm target. iOS targets (aarch64-apple-ios)
-              # can only be built on macOS with the Apple SDK, so they are not
-              # added here — see crates/cgm-ios/README.md for the macOS build.
+              # Rust nightly with the wasm target.
               (rust-bin.selectLatestNightlyWith (
                 toolchain:
                 toolchain.default.override {
