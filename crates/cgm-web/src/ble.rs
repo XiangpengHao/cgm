@@ -118,8 +118,14 @@ impl Ble for WebBle {
                                 }
                 }) as Box<dyn FnMut(web_sys::Event)>)
             };
-            f001.set_oncharacteristicvaluechanged(Some(cb.as_ref().unchecked_ref()));
+            // Use addEventListener (not the oncharacteristicvaluechanged
+            // property), which iOS WebBLE shims like Bluefy actually honor.
             jsf(f001.start_notifications()).await?;
+            f001.add_event_listener_with_callback(
+                "characteristicvaluechanged",
+                cb.as_ref().unchecked_ref(),
+            )
+            .map_err(js_err)?;
             // Best-effort: subscribe to F002 too, as the real device expects.
             if let Ok(f002) = characteristic(&svc, F002).await {
                 let _ = jsf(f002.start_notifications()).await;
@@ -169,8 +175,16 @@ impl Ble for WebBle {
                         let _ = tx.unbounded_send(bytes);
                     }
             }) as Box<dyn FnMut(web_sys::Event)>);
-            f002.set_oncharacteristicvaluechanged(Some(cb.as_ref().unchecked_ref()));
+            // addEventListener, not the oncharacteristicvaluechanged property —
+            // the latter is a no-op in iOS WebBLE shims (Bluefy), so the
+            // notification callback would never fire and every command would
+            // time out even though the handshake (a GATT read) succeeded.
             jsf(f002.start_notifications()).await?;
+            f002.add_event_listener_with_callback(
+                "characteristicvaluechanged",
+                cb.as_ref().unchecked_ref(),
+            )
+            .map_err(js_err)?;
 
             Ok(Box::new(WebBackend {
                 f002,
@@ -218,10 +232,15 @@ impl BleBackend for WebBackend {
     fn write_command<'a>(&'a mut self, data: &'a [u8]) -> LocalFuture<'a, Result<(), BleError>> {
         Box::pin(async move {
             let arr = js_sys::Uint8Array::from(data);
-            let p = self
-                .f002
-                .write_value_without_response_with_u8_array(&arr)
-                .map_err(|e| BleError::new(js_err(e)))?;
+            // Prefer write-without-response (what F002 advertises), but fall back
+            // to write-with-response when the peripheral/shim doesn't offer it —
+            // iOS WebBLE often lacks write-without-response. Mirrors index.html.
+            let p = if self.f002.properties().write_without_response() {
+                self.f002.write_value_without_response_with_u8_array(&arr)
+            } else {
+                self.f002.write_value_with_response_with_u8_array(&arr)
+            }
+            .map_err(|e| BleError::new(js_err(e)))?;
             jsf(p).await.map_err(BleError::new)?;
             Ok(())
         })
