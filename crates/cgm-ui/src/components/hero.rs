@@ -27,9 +27,9 @@ pub fn HeroCard() -> Element {
             ("No readings yet", "Connect your sensor to sync and chart your glucose.")
         };
         return rsx! {
-            div { class: "rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6",
+            div {
                 h2 { class: "text-sm text-slate-500 dark:text-slate-400 font-normal", "Current glucose" }
-                div { class: "mt-2 text-2xl font-semibold text-slate-400 dark:text-slate-500", "{headline}" }
+                div { class: "mt-1 text-2xl font-semibold text-slate-400 dark:text-slate-500", "{headline}" }
                 p { class: "mt-1 text-sm text-slate-500 dark:text-slate-400", "{sub}" }
             }
         };
@@ -65,9 +65,10 @@ pub fn HeroCard() -> Element {
         .unwrap_or(if idx >= 60 { "Active" } else { "Warming up" });
 
     rsx! {
-        div { class: "rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6",
+        div {
             div { class: "flex items-center justify-between",
-                h2 { class: "text-sm text-slate-500 dark:text-slate-400 font-normal", "Current glucose" }
+                // The giant number is self-evident on a phone; show the eyebrow at sm+.
+                h2 { class: "hidden sm:block text-sm text-slate-500 dark:text-slate-400 font-normal", "Current glucose" }
                 span { class: "text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
                     "{state_label}"
                 }
@@ -75,22 +76,23 @@ pub fn HeroCard() -> Element {
             // Announce zone changes (e.g. crossing into "Urgent low") to screen readers.
             div { "aria-live": "polite",
                 div { class: "mt-1 flex items-baseline gap-2",
-                    span { class: "text-6xl font-bold tracking-tight {mood.text()}", "{value}" }
-                    span { class: "text-lg font-semibold text-slate-400 dark:text-slate-500", "{unit.label()}" }
+                    span { class: "text-5xl sm:text-6xl font-bold tracking-tight leading-none {mood.text()}", "{value}" }
+                    span { class: "text-base sm:text-lg font-semibold text-slate-400 dark:text-slate-500", "{unit.label()}" }
                     if let Some(arrow) = arrow {
-                        span { class: "text-4xl font-semibold {mood.text()}", "aria-hidden": "true", "{arrow}" }
+                        span { class: "text-3xl sm:text-4xl font-semibold {mood.text()}", "aria-hidden": "true", "{arrow}" }
                     }
                 }
-                div { class: "mt-3 flex flex-wrap items-center gap-2",
+                // One dense metadata row: zone · trend (sm+) · freshness.
+                div { class: "mt-2 sm:mt-3 flex flex-wrap items-center gap-2",
                     span { class: "text-sm font-semibold px-2.5 py-1 rounded-full {mood.chip()}", "{headline}" }
                     if let Some(trend) = live.trend {
-                        span { class: "text-sm px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
+                        span { class: "hidden sm:inline-flex text-sm px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
                             "{trend_label(trend)}"
                         }
                     }
+                    span { class: "text-sm text-slate-500 dark:text-slate-400", "Updated {updated}" }
                 }
             }
-            p { class: "mt-3 text-sm text-slate-500 dark:text-slate-400", "Updated {updated}" }
         }
     }
 }

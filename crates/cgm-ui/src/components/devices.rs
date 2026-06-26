@@ -38,7 +38,8 @@ pub fn DevicesModal() -> Element {
 
     rsx! {
         div {
-            class: "fixed inset-0 z-40 bg-black/50 flex items-start justify-center overflow-auto p-4 sm:p-10",
+            // Bottom sheet on mobile, centered dialog at sm+.
+            class: "fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center sm:p-10",
             role: "dialog",
             "aria-modal": "true",
             // Don't discard an in-flight wizard (typed SN, pairing) on a stray
@@ -49,7 +50,8 @@ pub fn DevicesModal() -> Element {
                 wiz.set(Wizard::default());
             },
             div {
-                class: "w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-xl max-h-[85vh] overflow-y-auto",
+                class: "w-full sm:max-w-md max-h-[92vh] sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-xl overflow-y-auto",
+                style: "padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));",
                 tabindex: "-1",
                 autofocus: true,
                 onclick: move |e| e.stop_propagation(),

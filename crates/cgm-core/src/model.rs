@@ -145,6 +145,12 @@ pub struct DeviceData {
     pub records: BTreeMap<u32, Record>,
     #[serde(default)]
     pub events: Vec<Event>,
+    /// Per-record signal quality (0–100), keyed by sensor-minute index. Sparse:
+    /// only the broadcast (`0x11`) carries quality, so backfilled history
+    /// (`0x23`, glucose words only) has no entry. Additive + back-compatible:
+    /// omitted from JSON when empty, ignored by the old web app.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub quality: BTreeMap<u32, u8>,
 }
 
 impl DeviceData {

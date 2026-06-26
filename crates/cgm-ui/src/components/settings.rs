@@ -35,20 +35,22 @@ pub fn SettingsSheet() -> Element {
 
     let seg = |on: bool| {
         if on {
-            "h-8 px-3 text-sm font-semibold bg-sky-600 text-white"
+            "h-11 sm:h-8 px-3 text-sm font-semibold bg-sky-600 text-white"
         } else {
-            "h-8 px-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            "h-11 sm:h-8 px-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
         }
     };
 
     rsx! {
         div {
-            class: "fixed inset-0 z-40 bg-black/50 flex items-start justify-center overflow-auto p-4 sm:p-10",
+            // Bottom sheet on mobile, centered dialog at sm+.
+            class: "fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center sm:p-10",
             role: "dialog",
             "aria-modal": "true",
             onclick: close,
             div {
-                class: "w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-xl max-h-[85vh] overflow-y-auto space-y-5",
+                class: "w-full sm:max-w-md h-[92vh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl overflow-y-auto space-y-5 p-5",
+                style: "padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));",
                 tabindex: "-1",
                 autofocus: true,
                 onclick: move |e| e.stop_propagation(),
@@ -110,7 +112,7 @@ pub fn SettingsSheet() -> Element {
 
                 // ── Data & backup ─────────────────────────────────────────────
                 Section { title: "Data & backup",
-                    div { class: "flex flex-wrap gap-2",
+                    div { class: "grid grid-cols-2 gap-2",
                         button { class: "{BTN_GHOST}", onclick: move |_| actions.export_backup(), "Export backup" }
                         button { class: "{BTN_GHOST}", onclick: move |_| actions.import_backup(), "Import backup" }
                         button {
@@ -122,7 +124,7 @@ pub fn SettingsSheet() -> Element {
                             "Apple Health"
                         }
                         button {
-                            class: "h-9 px-3 rounded-lg border border-rose-300 dark:border-rose-800 text-sm font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500",
+                            class: "col-span-2 h-11 sm:h-9 px-3 rounded-lg border border-rose-300 dark:border-rose-800 text-sm font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500",
                             onclick: move |_| state.dialog.set(Some(Dialog::Confirm {
                                 message: "Clear all stored readings and events for this sensor?".into(),
                                 confirm_label: "Clear data".into(),

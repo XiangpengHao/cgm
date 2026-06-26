@@ -12,15 +12,15 @@ pub fn TimeInRangeBar() -> Element {
 
     let Some(tir) = time_in_range(&data) else {
         return rsx! {
-            div { class: "rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5",
-                div { class: "text-sm text-slate-500 dark:text-slate-400", "Time in range (24 h)" }
-                div { class: "mt-2 text-sm text-slate-400 dark:text-slate-500", "Not enough data yet" }
+            div { class: "flex items-center justify-between",
+                span { class: "text-sm text-slate-500 dark:text-slate-400", "Time in range (24 h)" }
+                span { class: "text-sm text-slate-400 dark:text-slate-500", "Not enough data yet" }
             }
         };
     };
 
     rsx! {
-        div { class: "rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5",
+        div {
             div { class: "flex items-center justify-between",
                 span { class: "text-sm text-slate-500 dark:text-slate-400", "Time in range (24 h)" }
                 span { class: "text-sm font-semibold text-emerald-600 dark:text-emerald-400",

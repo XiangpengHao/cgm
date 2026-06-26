@@ -127,6 +127,8 @@ impl Actions {
         };
         self.log("handshake ok — session established");
         app.status.set(ConnStatus::Connected);
+        // (Re)connecting snaps the chart back to the latest data.
+        app.chart_view.set(None);
 
         let generation = app.poll_gen.read().wrapping_add(1);
         app.poll_gen.set(generation);
@@ -186,6 +188,7 @@ impl Actions {
             d.records = records;
             if new_session {
                 d.events.clear();
+                d.quality.clear();
             }
         }
         self.persist();
@@ -210,8 +213,13 @@ impl Actions {
             status_byte: Some(bc.status),
         });
         let mut records = app.data.read().records.clone();
-        engine::merge_broadcast(&mut records, &bc);
-        app.data.write().records = records;
+        let mut quality = app.data.read().quality.clone();
+        engine::merge_broadcast(&mut records, &mut quality, &bc);
+        {
+            let mut d = app.data.write();
+            d.records = records;
+            d.quality = quality;
+        }
         self.persist();
         true
     }

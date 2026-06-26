@@ -16,16 +16,17 @@ pub fn ChartWindowControl() -> Element {
 
     rsx! {
         div {
-            class: "inline-flex rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden",
+            // Full-width fat targets on mobile; compact inline group at sm+.
+            class: "grid grid-cols-5 w-full sm:inline-flex sm:w-auto rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden",
             role: "group",
             "aria-label": "Chart time window",
             for (hours , label) in WINDOWS.iter() {
                 button {
                     key: "{label}",
                     class: if window == *hours && !panned {
-                        "h-8 px-3 text-sm font-semibold bg-sky-600 text-white {FOCUS}"
+                        "h-11 sm:h-8 px-3 text-sm font-semibold bg-sky-600 text-white {FOCUS}"
                     } else {
-                        "h-8 px-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 {FOCUS}"
+                        "h-11 sm:h-8 px-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 {FOCUS}"
                     },
                     onclick: {
                         let hours = *hours;

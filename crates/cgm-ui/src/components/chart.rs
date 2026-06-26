@@ -21,9 +21,9 @@ use cgm_core::ranges::{band_edges, classify};
 use cgm_core::stats::{convert, format_value};
 use dioxus::prelude::*;
 
-// Plot geometry (SVG user units; the horizontal scale tracks the measured
-// container width so 1 user unit == 1 rendered px).
-const H: f64 = 340.0;
+// Plot geometry. The SVG renders at the measured pixel width with viewBox ==
+// width (and no preserveAspectRatio), so 1 user unit == 1 rendered px and text
+// is never distorted. Height is responsive (see `chart_height`).
 const PAD_L: f64 = 44.0;
 const PAD_R: f64 = 14.0;
 const PAD_T: f64 = 14.0;
@@ -62,6 +62,14 @@ pub fn GlucoseChart() -> Element {
     // Drives both the viewBox and the x-axis math; must equal the measured CSS
     // width so element_coordinates() (CSS px) maps 1:1 to user units.
     let width = state.chart_width.read().max(1.0);
+    // Shorter on phones to fit the glance; taller on desktop.
+    let h: f64 = if width < 480.0 {
+        240.0
+    } else if width < 768.0 {
+        280.0
+    } else {
+        320.0
+    };
     let window_hours = *state.window_hours.read();
     let view = *state.chart_view.read();
 
@@ -106,7 +114,7 @@ pub fn GlucoseChart() -> Element {
     ymax += pad;
 
     let plot_w = (width - PAD_L - PAD_R).max(1.0);
-    let plot_h = H - PAD_T - PAD_B;
+    let plot_h = h - PAD_T - PAD_B;
     let x = move |t: i64| PAD_L + (t - t0) as f64 / span * plot_w;
     let y = move |v: f64| PAD_T + (ymax - v) / (ymax - ymin) * plot_h;
 
@@ -153,13 +161,18 @@ pub fn GlucoseChart() -> Element {
         }
     }
 
+    // Width-responsive label count: ~3–4 on a phone, up to 8 on desktop, and
+    // skip any tick that would clip the right edge.
     let mut grid: Vec<(f64, String)> = Vec::new();
     let first_hour = (t0 / HOUR_MS) * HOUR_MS;
-    let step = (((t1 - t0) / HOUR_MS / 8).max(1)) * HOUR_MS;
+    let target_ticks = ((plot_w / 64.0).floor() as i64).clamp(2, 8);
+    let span_hours = ((t1 - t0) / HOUR_MS).max(1);
+    let step = (span_hours / target_ticks).max(1) * HOUR_MS;
     let mut tk = first_hour;
     while tk <= t1 {
-        if tk >= t0 {
-            grid.push((x(tk), cgm_core::datetime::format_hm(tk, offset)));
+        let gx = x(tk);
+        if tk >= t0 && gx <= width - PAD_R - 12.0 {
+            grid.push((gx, cgm_core::datetime::format_hm(tk, offset)));
         }
         tk += step;
     }
@@ -315,13 +328,14 @@ pub fn GlucoseChart() -> Element {
     rsx! {
         div { class: "w-full select-none", onmounted: on_mounted, onresize: on_resize,
             svg {
-                width: "100%",
-                height: "{H}",
-                view_box: "0 0 {width} {H}",
-                preserve_aspect_ratio: "none",
+                width: "{width}",
+                height: "{h}",
+                view_box: "0 0 {width} {h}",
+                // No preserveAspectRatio: viewBox == pixel width, so glyphs never
+                // scale (CSS stretches the box via the style width:100%).
                 role: "img",
                 "aria-label": "{aria}",
-                style: "display:block; touch-action: pan-y; cursor: crosshair;",
+                style: "display:block; width:100%; max-width:100%; touch-action: pan-y; cursor: crosshair;",
                 onpointerdown: on_down,
                 onpointermove: on_move,
                 onpointerup: end_drag,
@@ -368,11 +382,11 @@ pub fn GlucoseChart() -> Element {
 
                 for (gx , label) in grid.iter() {
                     line {
-                        x1: "{gx}", y1: "{PAD_T}", x2: "{gx}", y2: "{H - PAD_B}",
+                        x1: "{gx}", y1: "{PAD_T}", x2: "{gx}", y2: "{h - PAD_B}",
                         stroke: "currentColor", stroke_width: "0.5", opacity: "0.08",
                     }
                     text {
-                        x: "{gx}", y: "{H - PAD_B + 16.0}", text_anchor: "middle",
+                        x: "{gx}", y: "{h - PAD_B + 16.0}", text_anchor: "middle",
                         font_size: "10", fill: "currentColor", opacity: "0.55",
                         "{label}"
                     }
@@ -380,7 +394,7 @@ pub fn GlucoseChart() -> Element {
 
                 for (ex , label) in events.iter() {
                     line {
-                        x1: "{ex}", y1: "{PAD_T}", x2: "{ex}", y2: "{H - PAD_B}",
+                        x1: "{ex}", y1: "{PAD_T}", x2: "{ex}", y2: "{h - PAD_B}",
                         stroke: "currentColor", stroke_width: "1", stroke_dasharray: "2 3", opacity: "0.4",
                     }
                     text {
@@ -412,7 +426,7 @@ pub fn GlucoseChart() -> Element {
 
                 if !has_points {
                     text {
-                        x: "{width / 2.0}", y: "{H / 2.0}", text_anchor: "middle",
+                        x: "{width / 2.0}", y: "{h / 2.0}", text_anchor: "middle",
                         font_size: "13", fill: "currentColor", opacity: "0.5",
                         "No readings yet — connect a sensor to see your graph."
                     }

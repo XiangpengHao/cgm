@@ -25,10 +25,11 @@ pub fn HealthModal() -> Element {
 
     rsx! {
         div {
-            class: "fixed inset-0 z-40 bg-black/50 flex items-start justify-center overflow-auto p-4 sm:p-10",
+            class: "fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center sm:p-10",
             onclick: move |_| state.show_health.set(false),
             div {
-                class: "w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-xl",
+                class: "w-full sm:max-w-lg max-h-[92vh] sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-xl overflow-y-auto",
+                style: "padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));",
                 onclick: move |e| e.stop_propagation(),
                 div { class: "flex items-center justify-between",
                     h2 { class: "text-base font-semibold text-slate-900 dark:text-slate-100", "Export to Apple Health" }

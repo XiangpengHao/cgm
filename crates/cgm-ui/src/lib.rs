@@ -41,19 +41,23 @@ pub fn App() -> Element {
     rsx! {
         div {
             class: "{root_class} min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100",
-            // Respect iOS safe areas (no effect on web, where the insets are 0).
-            style: "padding-top: env(safe-area-inset-top); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);",
+            // Respect iOS side safe areas; the sticky header owns the top inset
+            // (Dynamic Island) so it stays put when scrolled.
+            style: "padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);",
             Header {}
-            main { class: "max-w-5xl mx-auto p-4 space-y-4",
+            main { class: "max-w-5xl mx-auto p-3 sm:p-4 space-y-3 sm:space-y-4",
                 ErrorBanner {}
-                div { class: "grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4 items-start",
-                    div { class: "space-y-4",
+                div { class: "grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-3 sm:gap-4 items-start",
+                    // One glance card: the current value and time-in-range together.
+                    div { class: "{ui::CARD} p-4 sm:p-6",
                         HeroCard {}
-                        TimeInRangeBar {}
+                        div { class: "mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-slate-200 dark:border-slate-800",
+                            TimeInRangeBar {}
+                        }
                     }
-                    div { class: "{ui::CARD} p-4 min-w-0 overflow-hidden space-y-3",
-                        div { class: "flex items-center justify-between gap-2",
-                            h2 { class: "text-sm font-medium text-slate-500 dark:text-slate-400", "Glucose over time" }
+                    div { class: "{ui::CARD} p-4 sm:p-6 min-w-0 overflow-hidden space-y-2 sm:space-y-3",
+                        div { class: "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2",
+                            h2 { class: "sr-only sm:not-sr-only text-sm font-medium text-slate-500 dark:text-slate-400", "Glucose over time" }
                             ChartWindowControl {}
                         }
                         GlucoseChart {}
@@ -62,10 +66,13 @@ pub fn App() -> Element {
                 Diagnostics {}
                 footer {
                     class: "pt-2 text-center text-xs text-slate-500 dark:text-slate-400",
-                    style: "padding-bottom: calc(2rem + env(safe-area-inset-bottom));",
-                    "Experimental, uncalibrated, reverse-engineered software — "
-                    b { "not a medical device" }
-                    " and not for treatment decisions. Confirm anything that matters with a fingerstick and your clinician."
+                    style: "padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));",
+                    span { class: "sm:hidden", "Not a medical device — confirm with a fingerstick." }
+                    span { class: "hidden sm:inline",
+                        "Experimental, uncalibrated, reverse-engineered software — "
+                        b { "not a medical device" }
+                        " and not for treatment decisions. Confirm anything that matters with a fingerstick and your clinician."
+                    }
                 }
             }
             DevicesModal {}

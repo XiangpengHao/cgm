@@ -256,11 +256,17 @@ pub async fn activate_sensor(
     }
 }
 
-/// Merge a broadcast's readings into the record store (used by the live poll).
-pub fn merge_broadcast(records: &mut BTreeMap<u32, Record>, bc: &Broadcast) {
+/// Merge a broadcast's readings into the record + quality stores (live poll).
+/// Quality is only available from the broadcast, so this is where it's recorded.
+pub fn merge_broadcast(
+    records: &mut BTreeMap<u32, Record>,
+    quality: &mut BTreeMap<u32, u8>,
+    bc: &Broadcast,
+) {
     for r in &bc.readings {
         if r.index > 0 {
             records.insert(r.index as u32, (r.mgdl, r.rec_status));
+            quality.insert(r.index as u32, r.quality);
         }
     }
 }

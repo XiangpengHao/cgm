@@ -28,15 +28,22 @@ pub fn Header() -> Element {
     };
 
     rsx! {
-        header { class: "flex flex-wrap items-center gap-3 px-4 py-3 border-b border-slate-200 dark:border-slate-800",
+        header {
+            class: "sticky top-0 z-30 flex items-center gap-2 sm:gap-3 px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-950/90 backdrop-blur",
+            // Extend the header background into the Dynamic Island inset (0 in a
+            // browser tab; the notch height in a standalone/native install).
+            style: "padding-top: calc(0.5rem + env(safe-area-inset-top));",
             span { class: "h-2.5 w-2.5 rounded-full flex-none {dot}", "aria-hidden": "true" }
             h1 { class: "text-base font-semibold text-slate-900 dark:text-slate-100", "Glucose" }
-            span { class: "text-sm text-slate-500 dark:text-slate-400 truncate max-w-[40vw]", role: "status", "{status.label()}" }
+            // The dot already encodes state on mobile; show the words at sm+.
+            span { class: "hidden sm:inline text-sm text-slate-500 dark:text-slate-400 truncate max-w-[40vw]", role: "status", "{status.label()}" }
             span { class: "flex-1" }
 
+            // Device picker lives in the header on tablet/desktop; on mobile it's
+            // reached via Settings ▸ Sensors to keep the bar to one tidy row.
             if has_devices {
                 select {
-                    class: "h-9 max-w-44 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm px-2 text-slate-700 dark:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500",
+                    class: "hidden sm:block h-9 max-w-44 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm px-2 text-slate-700 dark:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500",
                     "aria-label": "Active sensor",
                     value: "{registry.active_id.clone().unwrap_or_default()}",
                     onchange: move |e| actions.set_active_device(e.value()),
@@ -59,8 +66,9 @@ pub fn Header() -> Element {
                     onclick: move |_| actions.sync(),
                     if busy { "Syncing…" } else { "Sync" }
                 }
+                // Disconnect is also reachable in Settings; hide it on mobile.
                 button {
-                    class: "{BTN_GHOST}",
+                    class: "hidden sm:inline-flex {BTN_GHOST}",
                     onclick: move |_| actions.disconnect(),
                     "Disconnect"
                 }
@@ -74,7 +82,7 @@ pub fn Header() -> Element {
             }
 
             button {
-                class: "h-9 w-9 inline-flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 {FOCUS}",
+                class: "h-11 w-11 sm:h-9 sm:w-9 flex-none inline-flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 {FOCUS}",
                 "aria-label": "Settings",
                 onclick: move |_| state.show_settings.set(true),
                 "⚙"
