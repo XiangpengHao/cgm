@@ -38,8 +38,8 @@ jobs:
         run: nix develop --command tailwindcss -i crates/cgm-web/tailwind.css -o crates/cgm-web/assets/tailwind.css
 
       # `--debug-symbols false` drops the wasm DWARF (which makes binaryen's
-      # wasm-opt abort) and roughly halves the wasm. base_path=cgm comes from
-      # crates/cgm-web/Dioxus.toml (project Pages site /<repo>/).
+      # wasm-opt abort) and roughly halves the wasm. Assets resolve from "/"
+      # (no base_path) because the site is served at a custom-domain root.
       - name: Build web app (release, WASM)
         run: |
           rm -rf target/dx/cgm-web   # avoid stale hashed assets if target/ is ever cached
@@ -49,8 +49,10 @@ jobs:
         run: |
           rm -rf _site && mkdir -p _site
           cp -r target/dx/cgm-web/release/web/public/. _site/
-          # SPA + 404 fallback so deep links resolve under GitHub Pages.
+          # SPA + 404 fallback so deep links resolve.
           cp _site/index.html _site/404.html
+          # Keep the custom domain across deploys (must match repo Pages setting).
+          echo "cgm.xiangpeng.systems" > _site/CNAME
 
       - uses: actions/upload-pages-artifact@v3
         with:
